@@ -33,7 +33,7 @@ var issued []string
 // var root cert
 
 func main() {
-
+	// for testing client port 80, pkis port 443, rpkis port 8080
 	// listen to requests and give out challenges and if successfull issue certificates
 	http.HandleFunc("/getChallenge", handleGetChallenge)
 	http.HandleFunc("/getCert", handleGetCert)
