@@ -12,7 +12,7 @@ az group create --name paulClusterGroup --location eastus
 
 az aks create -g paulClusterGroup --name paulCluster --generate-ssh-keys --enable-addons confcom --enable-sgxquotehelper
 
-# (az aks addon update --addon confcom --name " YourAKSClusterName " --resource-group "YourResourceGroup " --enable-sgxquotehelper) this time not ? 
+funktioniert auch ohne : (az aks addon update --addon confcom --name " YourAKSClusterName " --resource-group "YourResourceGroup " --enable-sgxquotehelper) this time not ? 
 
 az aks nodepool add --cluster-name paulCluster --name confcompool1 --resource-group paulClusterGroup --node-vm-size Standard_DC2s_v2 --node-count 2
 
