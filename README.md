@@ -18,9 +18,9 @@ loadPrivateKeyFromFile
 
 
 # Root:
-createRootCert
-showCerts
-deleteExpiredCerts
+createRootCert \\
+showCerts \\
+deleteExpiredCerts \\
 
 # (Root)-Ca:(issue Certificates)
 handleGetCert (TODO: sende Anfrage automatisch an gleiche URL wie eingehender Get Request)
