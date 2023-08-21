@@ -1,7 +1,7 @@
 # pki_go
 
 # Workflow
-Root CA stellt Certificate für Intermediate CAs aus und hat Endpoint, welcher alle gültigen Zertifikate ausstellt.<br>
+Root CA stellt Certificate für Intermediate CAs aus und hat Endpoint, welcher alle ausgegebenen Zertifikate enthält.<br>
 Intermediate CAs stellen Zertifikate für Clienten aus.<br>
 
 # Wie man ein Zertifikat bekommt
