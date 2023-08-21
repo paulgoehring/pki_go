@@ -41,7 +41,7 @@ createCSR<br>
 
 Intermediate CA ist Client und CA, benötigt also beide Funktionalitäten.<br>
 
-#TODO: 
+# TODO: 
 Design Certificates, maybe as JWT <br>
 Make Client Side request new Certificate when old one expires. <br>  
 When finished create container with Ego for marblerun: Manifests, Env etc<br> 
