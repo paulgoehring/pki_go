@@ -2,8 +2,10 @@ package main
 
 import (
 	"bytes"
+	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/base64"
@@ -68,35 +70,69 @@ func handleGetCert(w http.ResponseWriter, r *http.Request) {
 	}
 	defer request1.Body.Close()
 	// here check results
-	//signedFingerprint, err := io.ReadAll(request1.Body)
-	//fingerprintString := string(signedFingerprint)
+	signedFingerprint, err := io.ReadAll(request1.Body)
+	fingerprintString := string(signedFingerprint)
 
 	// check here if token and request stuff is in database
 	// if yes send back signed cert and delete from data
 	// challenge: encrypted app id (fingerabdruck) under the link of token
 
 	csrPem, err := io.ReadAll(r.Body)
-	//publicKey := getPublicKeyFromCSR(csrPem)
+	publicKey1 := getPublicKeyFromCSR(csrPem)
 
 	// TODO fix this mess, make it work
 
-	//ver, err := verifySignature(nonceTokenNew, fingerprintString, publicKey)
-	//if ver == false {
-	//	w.Header().Set("Content-Type", "text/plain")
-	//	fmt.Println("could not verify")
-	//	fmt.Print(ver, publicKey, csrPem)
+	ver, err := verifySignature(nonceTokenNew, fingerprintString, publicKey1)
+	if ver == false {
+		w.Header().Set("Content-Type", "text/plain")
+		fmt.Println("could not verify")
+		fmt.Println("nonce:", nonceTokenNew)
+		fmt.Println("finger:", fingerprintString)
+		//fmt.Print(ver, publicKey, csrPem)
 
-	//	fmt.Fprint(w, string("Could not verify"))
-	//	return
-	//}
+		fmt.Fprint(w, string("Could not verify"))
+		return
+	}
 
 	if err != nil {
 		http.Error(w, "Error reading request Body", http.StatusInternalServerError)
 	}
 
+	certBytes := crsToCrt(csrPem)
+
 	w.Header().Set("Content-Type", "application/x-pem-file")
 	w.WriteHeader(http.StatusOK)
-	w.Write(crsToCrt(csrPem))
+	w.Write(certBytes)
+}
+
+func verifySignature(token, signature string, publicKey *rsa.PublicKey) (bool, error) {
+	decodedSignature, err := base64.StdEncoding.DecodeString(signature)
+	if err != nil {
+		return false, err
+	}
+
+	hashed := sha256.Sum256([]byte(token))
+	err = rsa.VerifyPKCS1v15(publicKey, crypto.SHA256, hashed[:], decodedSignature)
+	if err != nil {
+		return false, nil // Verification failed
+	}
+	fmt.Println(token, signature, decodedSignature, hashed)
+	return true, nil // Verification successful
+}
+
+func getPublicKeyFromCSR(csrPEM []byte) *rsa.PublicKey {
+	data, _ := pem.Decode([]byte(csrPEM))
+	if data == nil || data.Type != "CERTIFICATE REQUEST" {
+		fmt.Println("Can`t decode CSR")
+		return nil
+	}
+	csr, err := x509.ParseCertificateRequest(data.Bytes)
+	if err != nil {
+		fmt.Println("Can`t parse CSR", err)
+		return nil
+	}
+	publicKey := csr.PublicKey.(*rsa.PublicKey)
+	return publicKey
 }
 
 // make data structure for dns/ip data or whatever and nonce challenge and if request comes from this url then look up nonce and try to get it
@@ -176,8 +212,8 @@ func createKeyPair(keyPath string) {
 		fmt.Println("Key pair could not get generated", err)
 		return
 	}
-	publicKey := &privateKey.PublicKey
-	fmt.Println(publicKey)
+	publicKey = &privateKey.PublicKey
+	//fmt.Println(publicKey)
 	// TODO: store private key securely
 	privateKeyPem := &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(privateKey)}
 	err = os.WriteFile(keyPath, pem.EncodeToMemory(privateKeyPem), 0644)
@@ -219,14 +255,14 @@ func getCertificate() {
 	// get token
 	nonceToken := getChallenge()
 	challenge := string(nonceToken)
-	fmt.Println(challenge)
+	//fmt.Println(challenge)
 	// upload token + proof of possession +
 	go http.HandleFunc(fmt.Sprintf("/.well-known/acme-challenge/%v", challenge), uploadToken(nonceToken))
 	go http.ListenAndServe(":443", nil)
 	//time.Sleep(10 * time.Second)
 	// create csr and send it
 	csrPEM := createCSR()
-	fmt.Println(csrPEM)
+	//fmt.Println(csrPEM)
 	request, err := http.Post("http://localhost:8080/getCert", "application/x-pem-file", bytes.NewReader(csrPEM))
 	if err != nil {
 		fmt.Println("Could not reach Server", err)
@@ -259,25 +295,35 @@ func getChallenge() []byte {
 	return nonceToken
 }
 
-func uploadToken(nonceToken []byte) http.HandlerFunc { //this maybe async or else probably blocking
+func uploadToken(nonceToken []byte) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "No valid Method", http.StatusMethodNotAllowed)
 			return
 		}
-		//privateKey, err := loadPrivateKeyFromFile("private_client.key")
-		//if err != nil {
-		//	fmt.Println("Error loading private key", err)
-		//}
-		//encryptedToken, err := encryptToken(privateKey, nonceToken)
-		//if err != nil {
-		//	fmt.Println("Error encrypting token", err)
-		//}
+		privateKey, err := loadPrivateKeyFromFile("private.key")
+		if err != nil {
+			fmt.Println("Error loading private key", err)
+		}
+		signedToken, err := signToken(string(nonceToken), privateKey)
+		if err != nil {
+			fmt.Println("Error encrypting token", err)
+		}
 		w.Header().Set("Content-Type", "text/plain")
-		fmt.Fprint(w, string(nonceToken)) // upload here finger print, proof of possession
-		// public key should be sent earlier
+		fmt.Fprint(w, signedToken)
 
 	}
+
+}
+
+func signToken(token string, privateKey *rsa.PrivateKey) (string, error) {
+	hashed := sha256.Sum256([]byte(token))
+	result, err := rsa.SignPKCS1v15(rand.Reader, privateKey, crypto.SHA256, hashed[:])
+	if err != nil {
+		return "Could not sign Token", err
+	}
+	encodedResult := base64.StdEncoding.EncodeToString(result)
+	return encodedResult, nil
 
 }
 

@@ -60,8 +60,8 @@ func createKeyPair(keyPath string) {
 		fmt.Println("Key pair could not get generated", err)
 		return
 	}
-	publicKey := &privateKey.PublicKey
-	fmt.Println(publicKey)
+	publicKey = &privateKey.PublicKey
+	//fmt.Println(publicKey)
 	// TODO: store private key securely
 	privateKeyPem := &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(privateKey)}
 	err = os.WriteFile(keyPath, pem.EncodeToMemory(privateKeyPem), 0644)
@@ -88,7 +88,7 @@ func createRootCert(organization string, country string, province string, locali
 	certOut, err := os.Create(crtPath)
 	pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: certCa})
 	certOut.Close()
-	fmt.Print("written cert.pem\n")
+	fmt.Print("written cert\n")
 
 	cert, err := x509.ParseCertificate(certCa)
 	if err != nil {
@@ -116,27 +116,29 @@ func handleGetCert(w http.ResponseWriter, r *http.Request) {
 	}
 	defer request1.Body.Close()
 	// here check results
-	//signedFingerprint, err := io.ReadAll(request1.Body)
-	//fingerprintString := string(signedFingerprint)
+	signedFingerprint, err := io.ReadAll(request1.Body)
+	fingerprintString := string(signedFingerprint)
 
 	// check here if token and request stuff is in database
 	// if yes send back signed cert and delete from data
 	// challenge: encrypted app id (fingerabdruck) under the link of token
 
 	csrPem, err := io.ReadAll(r.Body)
-	//publicKey := getPublicKeyFromCSR(csrPem)
+	publicKey1 := getPublicKeyFromCSR(csrPem)
 
 	// TODO fix this mess, make it work
 
-	//ver, err := verifySignature(nonceTokenNew, fingerprintString, publicKey)
-	//if ver == false {
-	//	w.Header().Set("Content-Type", "text/plain")
-	//	fmt.Println("could not verify")
-	//	fmt.Print(ver, publicKey, csrPem)
+	ver, err := verifySignature(nonceTokenNew, fingerprintString, publicKey1)
+	if ver == false {
+		w.Header().Set("Content-Type", "text/plain")
+		fmt.Println("could not verify")
+		fmt.Println("nonce:", nonceTokenNew)
+		fmt.Println("finger:", fingerprintString)
+		//fmt.Print(ver, publicKey, csrPem)
 
-	//	fmt.Fprint(w, string("Could not verify"))
-	//	return
-	//}
+		fmt.Fprint(w, string("Could not verify"))
+		return
+	}
 
 	if err != nil {
 		http.Error(w, "Error reading request Body", http.StatusInternalServerError)

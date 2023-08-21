@@ -83,7 +83,7 @@ func uploadToken(nonceToken []byte) http.HandlerFunc {
 			fmt.Println("Error encrypting token", err)
 		}
 		w.Header().Set("Content-Type", "text/plain")
-		fmt.Fprint(w, string(signedToken))
+		fmt.Fprint(w, signedToken)
 
 	}
 
@@ -109,6 +109,7 @@ func getChallenge() []byte {
 	defer request1.Body.Close()
 
 	nonceToken, err := io.ReadAll(request1.Body)
+	fmt.Println(string(nonceToken))
 	return nonceToken
 }
 
