@@ -13,14 +13,14 @@ Schicke eine Anfrage an /getCertificate Endpoint der CA. CA versucht nun die Cha
 
 
 # Alle:
-createKeyPair
-loadPrivateKeyFromFile
+createKeyPair <br>
+loadPrivateKeyFromFile<br>
 
 
 # Root:
-createRootCert \\
-showCerts \\
-deleteExpiredCerts \\
+createRootCert <br>
+showCerts <br>
+deleteExpiredCerts <br>
 
 # (Root)-Ca:(issue Certificates)
 handleGetCert (TODO: sende Anfrage automatisch an gleiche URL wie eingehender Get Request)
