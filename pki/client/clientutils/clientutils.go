@@ -20,14 +20,14 @@ func GetCertificate() {
 	// get token
 	nonceToken := getChallenge()
 	challenge := string(nonceToken)
-	fmt.Println(challenge)
+	fmt.Println("Reqeust Certificate")
 	// upload token + proof of possession of public key(encrypt hashed appID) +
 	go http.HandleFunc(fmt.Sprintf("/.well-known/acme-challenge/%v", challenge), uploadToken(nonceToken))
 	go http.ListenAndServe(":80", nil)
 
 	// create csr and send it
 	csrPEM := createCSR()
-	fmt.Println(csrPEM)
+	//fmt.Println(csrPEM)
 	request, err := http.Post("http://localhost:443/getCert", "application/x-pem-file", bytes.NewReader(csrPEM))
 	if err != nil {
 		fmt.Println("Could not reach Server", err)
@@ -47,6 +47,7 @@ func GetCertificate() {
 	}
 	pem.Encode(certFile, &pem.Block{Type: "CERTIFICATE", Bytes: result})
 	certFile.Close()
+	fmt.Println("Received Certificate successfull!")
 }
 
 func uploadToken(nonceToken []byte) http.HandlerFunc {
@@ -93,7 +94,7 @@ func getChallenge() []byte {
 	defer request1.Body.Close()
 
 	nonceToken, err := io.ReadAll(request1.Body)
-	fmt.Println(string(nonceToken))
+	fmt.Println(fmt.Sprintf("Got Challenge: %v", string(nonceToken)))
 	return nonceToken
 }
 

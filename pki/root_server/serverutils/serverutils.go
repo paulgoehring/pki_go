@@ -106,7 +106,7 @@ func VerifySignature(token, signature string, publicKey *rsa.PublicKey) (bool, e
 	if err != nil {
 		return false, nil // Verification failed
 	}
-	fmt.Println(token, signature, decodedSignature, hashed)
+	//fmt.Println(token, signature, decodedSignature, hashed)
 	return true, nil // Verification successful
 }
 
@@ -133,7 +133,7 @@ func GenerateNonce() string {
 		fmt.Println("Nonce could not be generated", err)
 	}
 	nonce := base64.StdEncoding.EncodeToString(nonceBytes)
-	fmt.Println(nonce)
+	//fmt.Println(nonce)
 	return nonce
 }
 

@@ -14,7 +14,7 @@ var publicKey *rsa.PublicKey
 // for testing client port 80, pkis port 443, rpkis port 8080
 func main() {
 	// get challenge
-	fmt.Println("HelloWorld!")
+	fmt.Println("HelloWorld! End of Code")
 
 	// get certificate
 }

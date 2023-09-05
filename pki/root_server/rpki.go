@@ -72,7 +72,7 @@ func createRootCert(organization string, country string, province string, locali
 	certOut, err := os.Create(crtPath)
 	pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: certCa})
 	certOut.Close()
-	fmt.Print("written cert\n")
+	fmt.Print("written root cert\n")
 
 	cert, err := x509.ParseCertificate(certCa)
 	if err != nil {
@@ -89,10 +89,12 @@ func handleGetCert(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "No valid Method", http.StatusMethodNotAllowed)
 		return
 	}
+	fmt.Println("Got Certification request")
 	// get parameters: pubKey , id and token
 	//publicKey := r.URL.Query().Get("pubKey")
 
-	address := r.RemoteAddr
+	address := server.ReadUserIP(r)
+	//fmt.Println(address)
 	// verify if appID is valid ID(valid Hash)
 	//appID := challenges[address].ID
 	nonceToken := challenges[address].NonceToken
@@ -128,6 +130,7 @@ func handleGetCert(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, string("Could not verify"))
 		return
 	}
+	fmt.Println("Verification successfull!")
 
 	if err != nil {
 		http.Error(w, "Error reading request Body", http.StatusInternalServerError)
@@ -154,6 +157,8 @@ func HandleGetChallenge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	fmt.Println("Got Challenge Request")
+
 	address := r.RemoteAddr
 	appID := r.URL.Query().Get("appID")
 	nonce := server.GenerateNonce()
@@ -164,13 +169,14 @@ func HandleGetChallenge(w http.ResponseWriter, r *http.Request) {
 			URL:        address,
 			NonceToken: nonce,
 		}
-		fmt.Println(newRequest.ID, newRequest.URL, newRequest.NonceToken)
+		//fmt.Println(newRequest.ID, newRequest.URL, newRequest.NonceToken)
 		challenges[address] = newRequest
 	} else {
 		fmt.Println("value for AppID missing")
 		nonce = "Value for AppID missing"
 	}
 
+	fmt.Println(fmt.Sprintf("Sent challenge: %v", nonce))
 	w.Header().Set("Content-Type", "text/plain")
 	fmt.Fprint(w, nonce)
 
