@@ -40,7 +40,7 @@ func GetCertificate() {
 		return
 	}
 	// receive certificate and store in file
-	certFile, err := os.Create("server.crt")
+	certFile, err := os.Create("client.crt")
 	if err != nil {
 		fmt.Println("Error creating file", err)
 		return
@@ -85,7 +85,7 @@ func signToken(token string, privateKey *rsa.PrivateKey) (string, error) {
 }
 
 func getChallenge() []byte {
-	request1, err := http.Get("http://localhost:443/getChallenge")
+	request1, err := http.Get(fmt.Sprintf("http://localhost:443/getChallenge?appID=%v", "blaAppId1"))
 	if err != nil {
 		fmt.Println("Could not reach Server", err)
 		return nil

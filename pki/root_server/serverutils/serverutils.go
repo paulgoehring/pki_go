@@ -10,14 +10,26 @@ import (
 	"encoding/pem"
 	"fmt"
 	"math/big"
+	"net/http"
 	"os"
 	"time"
 )
 
+func ReadUserIP(r *http.Request) string {
+	IPAddress := r.Header.Get("X-Real-Ip")
+	if IPAddress == "" {
+		IPAddress = r.Header.Get("X-Forwarded-For")
+	}
+	if IPAddress == "" {
+		IPAddress = r.RemoteAddr
+	}
+	return IPAddress
+}
+
 func CrsToCrt(csr []byte) []byte {
 	// load CA key pair
 	//      public key
-	caPublicKeyFile, err := os.ReadFile("ica.crt")
+	caPublicKeyFile, err := os.ReadFile("ca.crt")
 	if err != nil {
 		panic(err)
 	}

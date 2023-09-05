@@ -21,7 +21,6 @@ import (
 var privateKey *rsa.PrivateKey
 var publicKey *rsa.PublicKey
 var ca *x509.Certificate
-var nonceTokenNew string = ""
 var (
 	certificatesMutex sync.RWMutex
 	validCertificates []*x509.Certificate
@@ -37,7 +36,7 @@ var issued []string
 func main() {
 	// for testing client port 80, pkis port 443, rpkis port 8080
 	// listen to requests and give out challenges and if successfull issue certificates
-	http.HandleFunc("/getChallenge", handleGetChallenge)
+	http.HandleFunc("/getChallenge", HandleGetChallenge)
 	http.HandleFunc("/getCert", handleGetCert)
 	http.HandleFunc("/.well-known/certs", showCerts)
 	http.ListenAndServe(":8080", nil)
@@ -93,8 +92,13 @@ func handleGetCert(w http.ResponseWriter, r *http.Request) {
 	// get parameters: pubKey , id and token
 	//publicKey := r.URL.Query().Get("pubKey")
 
+	address := r.RemoteAddr
+	// verify if appID is valid ID(valid Hash)
+	//appID := challenges[address].ID
+	nonceToken := challenges[address].NonceToken
+
 	// here has to be url from challenger
-	request1, err := http.Get(fmt.Sprintf("http://localhost:443//.well-known/acme-challenge/%v", nonceTokenNew))
+	request1, err := http.Get(fmt.Sprintf("http://localhost:443//.well-known/acme-challenge/%v", nonceToken))
 	if err != nil {
 		fmt.Println("Could not reach Server", err)
 		return
@@ -113,11 +117,11 @@ func handleGetCert(w http.ResponseWriter, r *http.Request) {
 
 	// TODO fix this mess, make it work
 
-	ver, err := server.VerifySignature(nonceTokenNew, fingerprintString, publicKey1)
+	ver, err := server.VerifySignature(nonceToken, fingerprintString, publicKey1)
 	if ver == false {
 		w.Header().Set("Content-Type", "text/plain")
 		fmt.Println("could not verify")
-		fmt.Println("nonce:", nonceTokenNew)
+		fmt.Println("nonce:", nonceToken)
 		fmt.Println("finger:", fingerprintString)
 		//fmt.Print(ver, publicKey, csrPem)
 
@@ -144,15 +148,29 @@ func handleGetCert(w http.ResponseWriter, r *http.Request) {
 	w.Write(certBytes)
 }
 
-func handleGetChallenge(w http.ResponseWriter, r *http.Request) {
+func HandleGetChallenge(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "No valid Method", http.StatusMethodNotAllowed)
 		return
 	}
-	nonce := server.GenerateNonce() // maybe save additional data with nonce to id 100%
-	// open here http listener for challenge maybe???
-	//nonceTokens[noncesCount] = nonce
-	//noncesCount = noncesCount + 1
+
+	address := r.RemoteAddr
+	appID := r.URL.Query().Get("appID")
+	nonce := server.GenerateNonce()
+
+	if appID != "" {
+		newRequest := myutils.ChallengeObject{
+			ID:         appID,
+			URL:        address,
+			NonceToken: nonce,
+		}
+		fmt.Println(newRequest.ID, newRequest.URL, newRequest.NonceToken)
+		challenges[address] = newRequest
+	} else {
+		fmt.Println("value for AppID missing")
+		nonce = "Value for AppID missing"
+	}
+
 	w.Header().Set("Content-Type", "text/plain")
 	fmt.Fprint(w, nonce)
 

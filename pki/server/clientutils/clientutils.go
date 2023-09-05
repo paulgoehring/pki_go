@@ -85,7 +85,7 @@ func signToken(token string, privateKey *rsa.PrivateKey) (string, error) {
 }
 
 func getChallenge() []byte {
-	request1, err := http.Get("http://localhost:8080/getChallenge")
+	request1, err := http.Get(fmt.Sprintf("http://localhost:8080/getChallenge?appID=%v", "blaAppId1"))
 	if err != nil {
 		fmt.Println("Could not reach Server", err)
 		return nil
