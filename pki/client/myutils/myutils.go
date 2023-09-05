@@ -9,13 +9,7 @@ import (
 	"os"
 )
 
-type ChallengeObject struct {
-	ID         string
-	URL        string
-	NonceToken string
-}
-
-func LoadPrivateKeyFromFile(filename string) (*rsa.PrivateKey, error) {
+func loadPrivateKeyFromFile(filename string) (*rsa.PrivateKey, error) {
 	keyFile, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, err
