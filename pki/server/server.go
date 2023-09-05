@@ -6,9 +6,9 @@ import (
 	"io"
 	"net/http"
 
-	client "./clientutils"
-	myutils "./myutils"
-	server "./serverutils"
+	client "server/clientutils"
+	myutils "server/myutils"
+	server "server/serverutils"
 )
 
 // for testing client port 80, pkis port 443, rpkis port 8080

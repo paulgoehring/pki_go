@@ -14,8 +14,8 @@ import (
 	"sync"
 	"time"
 
-	myutils "./myutils"
-	server "./serverutils"
+	myutils "rpki/myutils"
+	server "rpki/serverutils"
 )
 
 var privateKey *rsa.PrivateKey
@@ -50,6 +50,8 @@ func init() {
 	//nonceTokens = make(map[string]int)
 	// create key pair
 	myutils.CreateKeyPair("private.key")
+
+	challenges = make(map[string]myutils.ChallengeObject)
 
 	// create root certificate
 	createRootCert("test", "test12", "test123", "test1234", "test12345", "test123456", "ca.crt")

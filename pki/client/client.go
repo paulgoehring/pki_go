@@ -4,8 +4,8 @@ import (
 	"crypto/rsa"
 	"fmt"
 
-	client "./clientutils"
-	myutils "./myutils"
+	client "client/clientutils"
+	myutils "client/myutils"
 )
 
 var privateKey *rsa.PrivateKey
