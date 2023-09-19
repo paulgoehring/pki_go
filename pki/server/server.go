@@ -1,34 +1,29 @@
 package main
 
 import (
-	"bytes"
-	"crypto"
-	"crypto/rand"
 	"crypto/rsa"
-	"crypto/sha256"
-	"crypto/x509"
-	"crypto/x509/pkix"
-	"encoding/base64"
-	"encoding/pem"
 	"fmt"
 	"io"
-	"math/big"
 	"net/http"
-	"os"
-	"time"
+
+	client "server/clientutils"
+	myutils "server/myutils"
+	server "server/serverutils"
 )
 
 // for testing client port 80, pkis port 443, rpkis port 8080
 
 var privateKey *rsa.PrivateKey
 var publicKey *rsa.PublicKey
-var nonceTokenNew string = ""
+
+// maybe add expire date for challenge
+var challenges map[string]myutils.ChallengeObject
 
 func main() {
 
 	// listen to requests and issue certificates
-	http.HandleFunc("/getChallenge", handleGetChallenge)
-	http.HandleFunc("/getCert", handleGetCert)
+	http.HandleFunc("/getChallenge", HandleGetChallenge)
+	http.HandleFunc("/getCert", HandleGetCert)
 	http.ListenAndServe(":443", nil)
 
 	// when certificate expired request new certificate
@@ -37,33 +32,28 @@ func main() {
 
 func init() {
 	// create key pair
-	createKeyPair("private.key")
+	myutils.CreateKeyPair("private.key")
+	challenges = make(map[string]myutils.ChallengeObject)
 
 	// get certificate from root pkis
 	// same as in client
-	go getCertificate()
+	go client.GetCertificate()
 
 }
 
-func IssueCertificate(template *x509.Certificate, parent *x509.Certificate, publicKeyToSign any, privateKeySign any) []byte {
-	cert, err := x509.CreateCertificate(rand.Reader, template, parent, publicKeyToSign, privateKeySign)
-	if err != nil {
-		fmt.Println("Failed to Create certificate for %v", publicKeyToSign, err)
-		return nil
-	}
-	return cert
-}
-
-func handleGetCert(w http.ResponseWriter, r *http.Request) {
+func HandleGetCert(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "No valid Method", http.StatusMethodNotAllowed)
 		return
 	}
-	// get parameters: pubKey , id and token
-	//publicKey := r.URL.Query().Get("pubKey")
+	fmt.Println("Got Certification request")
+	address := r.RemoteAddr
+	// verify if appID is valid ID(valid Hash)
+	//appID := challenges[address].ID
+	nonceToken := challenges[address].NonceToken
 
 	// here has to be url from challenger
-	request1, err := http.Get(fmt.Sprintf("http://localhost:80//.well-known/acme-challenge/%v", nonceTokenNew))
+	request1, err := http.Get(fmt.Sprintf("http://localhost:80//.well-known/acme-challenge/%v", nonceToken))
 	if err != nil {
 		fmt.Println("Could not reach Server", err)
 		return
@@ -78,294 +68,62 @@ func handleGetCert(w http.ResponseWriter, r *http.Request) {
 	// challenge: encrypted app id (fingerabdruck) under the link of token
 
 	csrPem, err := io.ReadAll(r.Body)
-	publicKey1 := getPublicKeyFromCSR(csrPem)
+	publicKey1 := server.GetPublicKeyFromCSR(csrPem)
 
 	// TODO fix this mess, make it work
 
-	ver, err := verifySignature(nonceTokenNew, fingerprintString, publicKey1)
+	ver, err := server.VerifySignature(nonceToken, fingerprintString, publicKey1)
 	if ver == false {
 		w.Header().Set("Content-Type", "text/plain")
 		fmt.Println("could not verify")
-		fmt.Println("nonce:", nonceTokenNew)
+		fmt.Println("nonce:", nonceToken)
 		fmt.Println("finger:", fingerprintString)
 		//fmt.Print(ver, publicKey, csrPem)
 
 		fmt.Fprint(w, string("Could not verify"))
 		return
 	}
+	fmt.Println("Verification successfull!")
 
 	if err != nil {
 		http.Error(w, "Error reading request Body", http.StatusInternalServerError)
 	}
 
-	certBytes := crsToCrt(csrPem)
+	certBytes := server.CrsToCrt(csrPem)
 
 	w.Header().Set("Content-Type", "application/x-pem-file")
 	w.WriteHeader(http.StatusOK)
 	w.Write(certBytes)
 }
 
-func verifySignature(token, signature string, publicKey *rsa.PublicKey) (bool, error) {
-	decodedSignature, err := base64.StdEncoding.DecodeString(signature)
-	if err != nil {
-		return false, err
-	}
-
-	hashed := sha256.Sum256([]byte(token))
-	err = rsa.VerifyPKCS1v15(publicKey, crypto.SHA256, hashed[:], decodedSignature)
-	if err != nil {
-		return false, nil // Verification failed
-	}
-	fmt.Println(token, signature, decodedSignature, hashed)
-	return true, nil // Verification successful
-}
-
-func getPublicKeyFromCSR(csrPEM []byte) *rsa.PublicKey {
-	data, _ := pem.Decode([]byte(csrPEM))
-	if data == nil || data.Type != "CERTIFICATE REQUEST" {
-		fmt.Println("Can`t decode CSR")
-		return nil
-	}
-	csr, err := x509.ParseCertificateRequest(data.Bytes)
-	if err != nil {
-		fmt.Println("Can`t parse CSR", err)
-		return nil
-	}
-	publicKey := csr.PublicKey.(*rsa.PublicKey)
-	return publicKey
-}
-
-// make data structure for dns/ip data or whatever and nonce challenge and if request comes from this url then look up nonce and try to get it
-func crsToCrt(csr []byte) []byte {
-	// load CA key pair
-	//      public key
-	caPublicKeyFile, err := os.ReadFile("ica.crt")
-	if err != nil {
-		panic(err)
-	}
-	pemBlock, _ := pem.Decode(caPublicKeyFile)
-	if pemBlock == nil {
-		panic("pem.Decode failed")
-	}
-	caCRT, err := x509.ParseCertificate(pemBlock.Bytes)
-	if err != nil {
-		panic("bla")
-	}
-
-	//      private key
-	caPrivateKey, err := loadPrivateKeyFromFile("private.key")
-
-	// load client certificate request
-	//clientCSRFile, err := os.ReadFile("client.csr")
-	//if err != nil {
-	//	panic(err)
-	//}
-	pemBlock, _ = pem.Decode(csr)
-	if pemBlock == nil {
-		panic("pem.Decode failed")
-	}
-	clientCSR, err := x509.ParseCertificateRequest(pemBlock.Bytes)
-	if err != nil {
-		panic(err)
-	}
-	if err = clientCSR.CheckSignature(); err != nil {
-		panic(err)
-	}
-
-	// create client certificate template
-	clientCRTTemplate := x509.Certificate{
-		Signature:          clientCSR.Signature,
-		SignatureAlgorithm: clientCSR.SignatureAlgorithm,
-
-		PublicKeyAlgorithm: clientCSR.PublicKeyAlgorithm,
-		PublicKey:          clientCSR.PublicKey,
-
-		SerialNumber: big.NewInt(2),
-		Issuer:       caCRT.Subject,
-		Subject:      clientCSR.Subject,
-		NotBefore:    time.Now(),
-		NotAfter:     time.Now().Add(24 * time.Hour),
-		KeyUsage:     x509.KeyUsageDigitalSignature,
-		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
-	}
-
-	// create client certificate from template and CA public key
-	clientCRTRaw, err := x509.CreateCertificate(rand.Reader, &clientCRTTemplate, caCRT, clientCSR.PublicKey, caPrivateKey)
-	if err != nil {
-		panic(err)
-	}
-	//clientCRTPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: clientCRTRaw})
-	clientCRTFile, err := os.Create("client.crt")
-	if err != nil {
-		panic(err)
-	}
-	pem.Encode(clientCRTFile, &pem.Block{Type: "CERTIFICATE", Bytes: clientCRTRaw})
-	clientCRTFile.Close()
-
-	return clientCRTRaw
-}
-
-func createKeyPair(keyPath string) {
-	// create and store key Pair
-	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		fmt.Println("Key pair could not get generated", err)
-		return
-	}
-	publicKey = &privateKey.PublicKey
-	//fmt.Println(publicKey)
-	// TODO: store private key securely
-	privateKeyPem := &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(privateKey)}
-	err = os.WriteFile(keyPath, pem.EncodeToMemory(privateKeyPem), 0644)
-	if err != nil {
-		fmt.Println("Private key could not get stored", err)
-		return
-	}
-
-}
-
-func handleGetChallenge(w http.ResponseWriter, r *http.Request) {
+func HandleGetChallenge(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "No valid Method", http.StatusMethodNotAllowed)
 		return
 	}
-	nonce := generateNonce() // maybe save additional data with nonce to id 100%
-	// open here http listener for challenge maybe???
-	//nonceTokens[noncesCount] = nonce
-	//noncesCount = noncesCount + 1
+
+	fmt.Println("Got Challenge Request")
+
+	address := r.RemoteAddr
+	appID := r.URL.Query().Get("appID")
+	nonce := server.GenerateNonce()
+
+	if appID != "" {
+		newRequest := myutils.ChallengeObject{
+			ID:         appID,
+			URL:        address,
+			NonceToken: nonce,
+		}
+		//fmt.Println(newRequest.ID, newRequest.URL, newRequest.NonceToken)
+		challenges[address] = newRequest
+	} else {
+		fmt.Println("value for AppID missing")
+		nonce = "Value for AppID missing"
+	}
+
+	fmt.Println(fmt.Sprintf("Sent challenge: %v", nonce))
+
 	w.Header().Set("Content-Type", "text/plain")
 	fmt.Fprint(w, nonce)
 
-}
-
-func generateNonce() string {
-	// TODO check if in nonce map
-	nonceBytes := make([]byte, 32)
-	_, err := rand.Read(nonceBytes)
-	if err != nil {
-		fmt.Println("Nonce could not be generated", err)
-	}
-	nonce := base64.StdEncoding.EncodeToString(nonceBytes)
-	fmt.Println(nonce)
-	nonceTokenNew = nonce
-	return nonce
-}
-
-func getCertificate() {
-	// get token
-	nonceToken := getChallenge()
-	challenge := string(nonceToken)
-	//fmt.Println(challenge)
-	// upload token + proof of possession +
-	go http.HandleFunc(fmt.Sprintf("/.well-known/acme-challenge/%v", challenge), uploadToken(nonceToken))
-	go http.ListenAndServe(":443", nil)
-	//time.Sleep(10 * time.Second)
-	// create csr and send it
-	csrPEM := createCSR()
-	//fmt.Println(csrPEM)
-	request, err := http.Post("http://localhost:8080/getCert", "application/x-pem-file", bytes.NewReader(csrPEM))
-	if err != nil {
-		fmt.Println("Could not reach Server", err)
-		return
-	}
-	defer request.Body.Close()
-	result, err := io.ReadAll(request.Body)
-	if err != nil {
-		fmt.Println("Bad result", err)
-		return
-	}
-	certFile, err := os.Create("ica.crt")
-	if err != nil {
-		fmt.Println("Error creating file", err)
-		return
-	}
-	pem.Encode(certFile, &pem.Block{Type: "CERTIFICATE", Bytes: result})
-	certFile.Close()
-}
-
-func getChallenge() []byte {
-	request1, err := http.Get("http://localhost:8080/getChallenge")
-	if err != nil {
-		fmt.Println("Could not reach Server", err)
-		return nil
-	}
-	defer request1.Body.Close()
-
-	nonceToken, err := io.ReadAll(request1.Body)
-	return nonceToken
-}
-
-func uploadToken(nonceToken []byte) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "No valid Method", http.StatusMethodNotAllowed)
-			return
-		}
-		privateKey, err := loadPrivateKeyFromFile("private.key")
-		if err != nil {
-			fmt.Println("Error loading private key", err)
-		}
-		signedToken, err := signToken(string(nonceToken), privateKey)
-		if err != nil {
-			fmt.Println("Error encrypting token", err)
-		}
-		w.Header().Set("Content-Type", "text/plain")
-		fmt.Fprint(w, signedToken)
-
-	}
-
-}
-
-func signToken(token string, privateKey *rsa.PrivateKey) (string, error) {
-	hashed := sha256.Sum256([]byte(token))
-	result, err := rsa.SignPKCS1v15(rand.Reader, privateKey, crypto.SHA256, hashed[:])
-	if err != nil {
-		return "Could not sign Token", err
-	}
-	encodedResult := base64.StdEncoding.EncodeToString(result)
-	return encodedResult, nil
-
-}
-
-func createCSR() []byte {
-	//privateKey, err := loadPrivateKeyFromFile("private_client.key")
-	//if err != nil {
-	//	fmt.Println("Could not load Private key")
-	//}
-	privateKey, err := loadPrivateKeyFromFile("private.key")
-	data := pkix.Name{
-		Country:            []string{"TESTESTETSTSAT"},
-		Organization:       []string{"tetasdasd"},
-		OrganizationalUnit: []string{"asdasdasd"},
-		CommonName:         "localhost.com",
-	}
-	template := x509.CertificateRequest{
-		Subject:            data,
-		SignatureAlgorithm: x509.SHA256WithRSA,
-	}
-	csrDER, err := x509.CreateCertificateRequest(rand.Reader, &template, privateKey)
-	if err != nil {
-		fmt.Println("Error creating CSR:", err)
-	}
-
-	csrPEM := pem.EncodeToMemory(&pem.Block{
-		Type:  "CERTIFICATE REQUEST",
-		Bytes: csrDER,
-	})
-	return csrPEM
-
-}
-
-func loadPrivateKeyFromFile(filename string) (*rsa.PrivateKey, error) {
-	keyFile, err := os.ReadFile(filename)
-	if err != nil {
-		return nil, err
-	}
-
-	block, _ := pem.Decode(keyFile)
-	if block == nil || block.Type != "RSA PRIVATE KEY" {
-		return nil, fmt.Errorf("invalid private key format")
-	}
-
-	return x509.ParsePKCS1PrivateKey(block.Bytes)
 }
