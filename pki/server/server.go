@@ -3,7 +3,6 @@ package main
 import (
 	"crypto/rsa"
 	"fmt"
-	"io"
 	"net/http"
 
 	client "server/clientutils"
@@ -42,58 +41,16 @@ func init() {
 }
 
 func HandleGetCert(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
+	if r.Method != http.MethodGet {
 		http.Error(w, "No valid Method", http.StatusMethodNotAllowed)
 		return
 	}
 	fmt.Println("Got Certification request")
-	address := r.RemoteAddr
-	// verify if appID is valid ID(valid Hash)
-	//appID := challenges[address].ID
-	nonceToken := challenges[address].NonceToken
+	signedFingerprint := string(r.URL.Query().Get("fingerprint"))
 
-	// here has to be url from challenger
-	request1, err := http.Get(fmt.Sprintf("http://localhost:80//.well-known/acme-challenge/%v", nonceToken))
-	if err != nil {
-		fmt.Println("Could not reach Server", err)
-		return
+	if signedFinerprint != "" { // here check if nonce + appID correct, every nonce needs a number for map i guess, after delete from data structure
+
 	}
-	defer request1.Body.Close()
-	// here check results
-	signedFingerprint, err := io.ReadAll(request1.Body)
-	fingerprintString := string(signedFingerprint)
-
-	// check here if token and request stuff is in database
-	// if yes send back signed cert and delete from data
-	// challenge: encrypted app id (fingerabdruck) under the link of token
-
-	csrPem, err := io.ReadAll(r.Body)
-	publicKey1 := server.GetPublicKeyFromCSR(csrPem)
-
-	// TODO fix this mess, make it work
-
-	ver, err := server.VerifySignature(nonceToken, fingerprintString, publicKey1)
-	if ver == false {
-		w.Header().Set("Content-Type", "text/plain")
-		fmt.Println("could not verify")
-		fmt.Println("nonce:", nonceToken)
-		fmt.Println("finger:", fingerprintString)
-		//fmt.Print(ver, publicKey, csrPem)
-
-		fmt.Fprint(w, string("Could not verify"))
-		return
-	}
-	fmt.Println("Verification successfull!")
-
-	if err != nil {
-		http.Error(w, "Error reading request Body", http.StatusInternalServerError)
-	}
-
-	certBytes := server.CrsToCrt(csrPem)
-
-	w.Header().Set("Content-Type", "application/x-pem-file")
-	w.WriteHeader(http.StatusOK)
-	w.Write(certBytes)
 }
 
 func HandleGetChallenge(w http.ResponseWriter, r *http.Request) {
@@ -101,13 +58,10 @@ func HandleGetChallenge(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "No valid Method", http.StatusMethodNotAllowed)
 		return
 	}
-
 	fmt.Println("Got Challenge Request")
-
 	address := r.RemoteAddr
 	appID := r.URL.Query().Get("appID")
 	nonce := server.GenerateNonce()
-
 	if appID != "" {
 		newRequest := myutils.ChallengeObject{
 			ID:         appID,
@@ -120,10 +74,8 @@ func HandleGetChallenge(w http.ResponseWriter, r *http.Request) {
 		fmt.Println("value for AppID missing")
 		nonce = "Value for AppID missing"
 	}
-
 	fmt.Println(fmt.Sprintf("Sent challenge: %v", nonce))
 
 	w.Header().Set("Content-Type", "text/plain")
 	fmt.Fprint(w, nonce)
-
 }
