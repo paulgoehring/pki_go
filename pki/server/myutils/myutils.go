@@ -11,8 +11,8 @@ import (
 
 type ChallengeObject struct {
 	ID         string
-	URL        string
 	NonceToken string
+	pubKey     *rsa.PublicKey
 }
 
 func LoadPrivateKeyFromFile(filename string) (*rsa.PrivateKey, error) {

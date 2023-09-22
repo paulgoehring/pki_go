@@ -18,6 +18,9 @@ var publicKey *rsa.PublicKey
 // maybe add expire date for challenge
 var challenges map[string]myutils.ChallengeObject
 
+// look up backend id, format is [frontendID]backendID
+var tableAppIDs map[string]string
+
 func main() {
 
 	// listen to requests and issue certificates
@@ -33,6 +36,9 @@ func init() {
 	// create key pair
 	myutils.CreateKeyPair("private.key")
 	challenges = make(map[string]myutils.ChallengeObject)
+	tableAppIDs = make(map[string]string)
+
+	tableAppIDs["asd123"] = "123asd"
 
 	// get certificate from root pkis
 	// same as in client
@@ -46,9 +52,13 @@ func HandleGetCert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	fmt.Println("Got Certification request")
+	frontendAppID := r.URL.Query().Get("appID")
 	signedFingerprint := string(r.URL.Query().Get("fingerprint"))
 
+	fingerprintToVerify := challenges[frontendAppID].NonceToken + challenges[frontendAppID].ID
+
 	if signedFinerprint != "" { // here check if nonce + appID correct, every nonce needs a number for map i guess, after delete from data structure
+		ver, err := server.VerifySignature()
 
 	}
 }
@@ -59,17 +69,20 @@ func HandleGetChallenge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	fmt.Println("Got Challenge Request")
-	address := r.RemoteAddr
-	appID := r.URL.Query().Get("appID")
+
+	frontendAppID := r.URL.Query().Get("appID")
+	publicKey := r.URL.Query().Get("pubKey") //how to send pubKey
+	backendAppID := tableAppIDs[frontendAppID]
+
 	nonce := server.GenerateNonce()
-	if appID != "" {
+	if frontendAppID != "" {
 		newRequest := myutils.ChallengeObject{
-			ID:         appID,
-			URL:        address,
+			ID:         backendAppID,
 			NonceToken: nonce,
+			pubKey:     publicKey,
 		}
 		//fmt.Println(newRequest.ID, newRequest.URL, newRequest.NonceToken)
-		challenges[address] = newRequest
+		challenges[frontendAppID] = newRequest
 	} else {
 		fmt.Println("value for AppID missing")
 		nonce = "Value for AppID missing"
