@@ -21,7 +21,7 @@ import (
 func GetCertificate() {
 	// placeholder
 	appID := "asd123"
-	nonceToken := "asdasdasd" //getChallenge()
+	nonceToken := getChallenge()
 	challenge := string(nonceToken)
 
 	fmt.Println("Request Token")
@@ -43,7 +43,7 @@ func GetCertificate() {
 	}
 	fmt.Println(newJwt)
 
-	req, err := http.NewRequest("GET", "http://localhost:8080/getCert", nil)
+	req, err := http.NewRequest("GET", "http://localhost:443/getCert", nil)
 	req.Header.Set("Authorization", "Bearer "+newJwt)
 	client := &http.Client{}
 	resp, err := client.Do(req)

@@ -78,7 +78,7 @@ func createJwt(privKey *rsa.PrivateKey, fingerprint string, frontEndID string) s
 		KeyID:     "test1234",
 		Algorithm: "RS256",
 		Exponent:  strconv.Itoa(privKey.PublicKey.E),
-		Modulus:   string(privKey.PublicKey.N.Bytes()),
+		Modulus:   privKey.PublicKey.N.String(),
 	}
 	claims := jwt.MapClaims{
 		"sub":         frontEndID,
@@ -87,7 +87,7 @@ func createJwt(privKey *rsa.PrivateKey, fingerprint string, frontEndID string) s
 		"exp":         time.Now().Add(time.Hour * 1).Unix(),
 		"jwk":         myClaims,
 	}
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
 	tokenString, err := token.SignedString(privKey)
 	if err != nil {
 		return ""

@@ -12,7 +12,6 @@ import (
 type ChallengeObject struct {
 	ID         string
 	NonceToken string
-	PubKey     *rsa.PublicKey
 }
 
 type MyJWTClaims struct {

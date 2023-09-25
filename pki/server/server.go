@@ -2,10 +2,15 @@ package main
 
 import (
 	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
+	"math/big"
 	"net/http"
 
-	client "server/clientutils"
+	"github.com/golang-jwt/jwt"
+
+	//client "server/clientutils"
 	myutils "server/myutils"
 	server "server/serverutils"
 )
@@ -38,11 +43,11 @@ func init() {
 	challenges = make(map[string]myutils.ChallengeObject)
 	tableAppIDs = make(map[string]string)
 
-	tableAppIDs["asd123"] = "123asd"
+	tableAppIDs["asd123"] = "asd123"
 
 	// get certificate from root pkis
 	// same as in client
-	go client.GetCertificate()
+	// go client.GetCertificate()
 
 }
 
@@ -52,16 +57,58 @@ func HandleGetCert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	fmt.Println("Got Certification request")
-	frontendAppID := r.URL.Query().Get("appID")
-	signedFingerprint := string(r.URL.Query().Get("fingerprint"))
-	publicKey := challenges[frontendAppID].pubKey // take from jwt
+	tokenString := r.Header.Get("Authorization")[7:]
+
+	parsedToken, _ := jwt.Parse(tokenString, nil)
+
+	claims, ok := parsedToken.Claims.(jwt.MapClaims)
+	if !ok {
+		// handle invalid claims ?
+		fmt.Println("Invalid JWT claims")
+		return
+	}
+
+	publicKeyData := claims["jwk"].(map[string]interface{})
+	n1, _ := publicKeyData["n"].(string)
+	e1, _ := publicKeyData["e"].(string)
+
+	n2 := new(big.Int)
+	n2.SetString(n1, 10)
+
+	e2 := new(big.Int)
+	e2.SetString(e1, 10)
+
+	recreatePubKey := &rsa.PublicKey{
+		N: n2,
+		E: int(e2.Int64()),
+	}
+	publicKeyPEM22 := &pem.Block{
+		Type:  "RSA PUBLIC KEY",
+		Bytes: x509.MarshalPKCS1PublicKey(recreatePubKey),
+	}
+	fmt.Println("\nPublic Key in PEM Format:")
+	publicKeyString := string(pem.EncodeToMemory(publicKeyPEM22))
+	fmt.Println(publicKeyString)
+
+	//modulus := new(big.Int)
+	//modulus.SetString(publicKeyJSON.n, 10)
+
+	//frontendAppID := r.URL.Query().Get("appID")
+	signedFingerprint := claims["fingerprint"].(string)
+	frontendAppID := claims["sub"].(string)
 
 	fingerprintToVerify := challenges[frontendAppID].NonceToken + challenges[frontendAppID].ID
 
-	if signedFingerprint != "" { // here check if nonce + appID correct, every nonce needs a number for map i guess, after delete from data structure
-		ver, err := server.VerifySignature(fingerprintToVerify, signedFingerprint, publicKey)
-
+	// here check if nonce + appID correct, every nonce needs a number for map i guess, after delete from data structure
+	ver, err := server.VerifySignature(fingerprintToVerify, signedFingerprint, recreatePubKey)
+	if ver {
+		fmt.Println("Verification successfull")
+	} else {
+		fmt.Println("Unsuccessfull", err)
 	}
+
+	// Now give back jwt signed by server as response, validate at rpki endpoint at the end
+
 }
 
 func HandleGetChallenge(w http.ResponseWriter, r *http.Request) {
@@ -72,7 +119,6 @@ func HandleGetChallenge(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("Got Challenge Request")
 
 	frontendAppID := r.URL.Query().Get("appID")
-	publicKey := r.URL.Query().Get("pubKey") //how to send pubKey
 	backendAppID := tableAppIDs[frontendAppID]
 
 	nonce := server.GenerateNonce()
@@ -80,7 +126,6 @@ func HandleGetChallenge(w http.ResponseWriter, r *http.Request) {
 		newRequest := myutils.ChallengeObject{
 			ID:         backendAppID,
 			NonceToken: nonce,
-			PubKey:     publicKey,
 		}
 		//fmt.Println(newRequest.ID, newRequest.URL, newRequest.NonceToken)
 		challenges[frontendAppID] = newRequest
