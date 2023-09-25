@@ -12,6 +12,10 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strconv"
+	"time"
+
+	"github.com/golang-jwt/jwt"
 )
 
 func GetCertificate() {
@@ -19,6 +23,7 @@ func GetCertificate() {
 	appID := "asd123"
 	nonceToken := getChallenge()
 	challenge := string(nonceToken)
+
 	fmt.Println("Request Token")
 
 	fingerprint := challenge + appID
@@ -26,21 +31,23 @@ func GetCertificate() {
 	if err != nil {
 		fmt.Println("Error loading private key", err)
 	}
+
 	signedToken, err := signToken(fingerprint, privateKey)
-	request, err := http.Get((fmt.Sprintf("http://localhost:8080/getCert?fingerprint=%v", signedToken)))
+
+	newJwt := createJwt(privateKey, signedToken, appID)
+
+	req, err := http.NewRequest("GET", "http://localhost:8080/getCert", nil)
+	req.Header.Set("Authorization", "Bearer "+newJwt)
+	client := &http.Client{}
+	resp, err := client.Do(req)
 	if err != nil {
-		fmt.Println("Could not reach Server", err)
 		return
 	}
-	defer request.Body.Close()
-	result, err := io.ReadAll(request.Body)
-	if err != nil {
-		fmt.Println("Bad result", err)
-		return
-	}
-	fmt.Println("Token is:")
-	fmt.Println(result)
-	fmt.Println(string(result))
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+
+	fmt.Println("Response: ")
+	fmt.Println(string(body))
 
 }
 
@@ -53,6 +60,39 @@ func signToken(token string, privateKey *rsa.PrivateKey) (string, error) {
 	encodedResult := base64.StdEncoding.EncodeToString(result)
 	return encodedResult, nil
 
+}
+
+type myJWKClaims struct {
+	KeyType   string `json:"kty"`
+	Usage     string `json:"use"`
+	KeyID     string `json:"kid"`
+	Algorithm string `json:"alg"`
+	Exponent  string `json:"e"`
+	Modulus   string `json:"n"`
+}
+
+func createJwt(privKey *rsa.PrivateKey, fingerprint string, frontEndID string) string {
+	myClaims := myJWKClaims{
+		KeyType:   "RSA",
+		Usage:     "sig",
+		KeyID:     "test1234",
+		Algorithm: "RS256",
+		Exponent:  strconv.Itoa(privKey.PublicKey.E),
+		Modulus:   string(privKey.PublicKey.N.Bytes()),
+	}
+	claims := jwt.MapClaims{
+		"sub":         frontEndID,
+		"iss":         "client",
+		"fingerprint": fingerprint,
+		"exp":         time.Now().Add(time.Hour * 1).Unix(),
+		"jwk":         myClaims,
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	tokenString, err := token.SignedString(privKey)
+	if err != nil {
+		return ""
+	}
+	return tokenString
 }
 
 func getChallenge() []byte {

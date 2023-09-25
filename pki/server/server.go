@@ -54,11 +54,12 @@ func HandleGetCert(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("Got Certification request")
 	frontendAppID := r.URL.Query().Get("appID")
 	signedFingerprint := string(r.URL.Query().Get("fingerprint"))
+	publicKey := challenges[frontendAppID].pubKey // take from jwt
 
 	fingerprintToVerify := challenges[frontendAppID].NonceToken + challenges[frontendAppID].ID
 
-	if signedFinerprint != "" { // here check if nonce + appID correct, every nonce needs a number for map i guess, after delete from data structure
-		ver, err := server.VerifySignature()
+	if signedFingerprint != "" { // here check if nonce + appID correct, every nonce needs a number for map i guess, after delete from data structure
+		ver, err := server.VerifySignature(fingerprintToVerify, signedFingerprint, publicKey)
 
 	}
 }
@@ -79,7 +80,7 @@ func HandleGetChallenge(w http.ResponseWriter, r *http.Request) {
 		newRequest := myutils.ChallengeObject{
 			ID:         backendAppID,
 			NonceToken: nonce,
-			pubKey:     publicKey,
+			PubKey:     publicKey,
 		}
 		//fmt.Println(newRequest.ID, newRequest.URL, newRequest.NonceToken)
 		challenges[frontendAppID] = newRequest
