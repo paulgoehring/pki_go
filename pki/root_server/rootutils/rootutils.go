@@ -2,6 +2,8 @@ package rootutils
 
 import (
 	"crypto/rsa"
+	"crypto/sha256"
+	"encoding/hex"
 	"strconv"
 	"time"
 
@@ -27,12 +29,19 @@ type myJWKClaims struct {
 	Modulus   string `json:"n"`
 }
 
+func generateKIDFromPublicKey(publicKey *rsa.PublicKey) string {
+	hash := sha256.Sum256(publicKey.N.Bytes())
+	kid := hex.EncodeToString(hash[:])
+	return kid
+}
+
 func CreateJwt(privKey *rsa.PrivateKey, frontEndID string, publicKey *rsa.PublicKey) (string, PublicKeyInfo) {
+	// Create a new JWT OR NEW CERT
 	expiration := time.Now().Add(time.Hour * 1)
 	myClaims := myJWKClaims{
 		KeyType:   "RSA",
 		Usage:     "sig",
-		KeyID:     "test12345", // here maybe hash of the key idk how this works
+		KeyID:     generateKIDFromPublicKey(publicKey), // here maybe hash of the key idk how this works
 		Algorithm: "RS256",
 		Exponent:  strconv.Itoa(publicKey.E),
 		Modulus:   publicKey.N.String(),
@@ -40,13 +49,13 @@ func CreateJwt(privKey *rsa.PrivateKey, frontEndID string, publicKey *rsa.Public
 	claims := jwt.MapClaims{
 		"sub": frontEndID,
 		"iss": "server",
-		"kid": "serverkeyid",
+		"kid": generateKIDFromPublicKey(&privKey.PublicKey),
 		"exp": expiration.Unix(),
 		"jwk": myClaims,
 	}
 	publicKeyData := PublicKeyInfo{
 		E:   strconv.Itoa(publicKey.E),
-		Kid: "test12345",
+		Kid: generateKIDFromPublicKey(publicKey),
 		N:   publicKey.N.String(),
 		Use: "sig",
 		Kty: "RSA",
@@ -59,4 +68,26 @@ func CreateJwt(privKey *rsa.PrivateKey, frontEndID string, publicKey *rsa.Public
 		return "", publicKeyData
 	}
 	return tokenString, publicKeyData
+}
+
+func GiveKeyJwt(privKey *rsa.PrivateKey, pubKey PublicKeyInfo) string {
+	// give out specific Jwt
+	claims := jwt.MapClaims{
+
+		"e":   pubKey.E,
+		"kid": pubKey.Kid,
+		"n":   pubKey.N,
+		"use": pubKey.Use,
+		"kty": pubKey.Kty,
+		"alg": pubKey.Alg,
+		"exp": pubKey.Exp,
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+	token.Header["alg"] = "RS256"
+	token.Header["typ"] = "JWT"
+	tokenString, err := token.SignedString(privKey)
+	if err != nil {
+		return "error"
+	}
+	return tokenString
 }

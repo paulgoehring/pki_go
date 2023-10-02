@@ -37,7 +37,7 @@ func main() {
 	// listen to requests and give out challenges and if successfull issue certificates
 	http.HandleFunc("/getChallenge", HandleGetChallenge)
 	http.HandleFunc("/getCert", HandleGetCert)
-	http.HandleFunc("/.well-known/certs", showCerts)
+	http.HandleFunc("/.well-known/certs", HandleCerts)
 	http.ListenAndServe(":8080", nil)
 
 	// make certificates available at ./well-known etc and delete certificates which expired
@@ -156,16 +156,40 @@ func HandleGetChallenge(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, nonce)
 }
 
-func showCerts(w http.ResponseWriter, r *http.Request) {
-	// firste check for expired certificates
+func HandleCerts(w http.ResponseWriter, r *http.Request) {
 	deleteExpiredCerts()
+	keyID := r.URL.Query().Get("kid")
+	fmt.Println(keyID)
+	if keyID != "" {
+		GetKeyDataByKid(w, keyID)
+	} else {
+		showCerts(w)
+	}
+}
 
-	// give out all valid stuff
+func GetKeyDataByKid(w http.ResponseWriter, kid string) {
+	privateKey, err := myutils.LoadPrivateKeyFromFile("private.key")
+	if err != nil {
+		fmt.Println("Could not load private Key")
+	}
+	w.Header().Set("Content-Type", "application/json")
 	PublicKeyMap.Range(func(key, value interface{}) bool {
-		fmt.Printf("Key: %v\nValue: %+v\n", key, value)
+		if key == kid {
+			kidJwt := root.GiveKeyJwt(privateKey, value.(root.PublicKeyInfo))
+			fmt.Fprint(w, kidJwt)
+		}
 		return true
 	})
-	fmt.Println(PublicKeyMap)
+}
+
+func showCerts(w http.ResponseWriter) {
+
+	// give out all valid stuff
+	w.Header().Set("Content-Type", "text/plain")
+	PublicKeyMap.Range(func(key, value interface{}) bool {
+		fmt.Fprintf(w, "Key: %v\nValue: %+v\n", key, value)
+		return true
+	})
 
 }
 

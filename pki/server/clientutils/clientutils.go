@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/pem"
 	"fmt"
 	"io"
@@ -78,11 +79,17 @@ type myJWKClaims struct {
 	Modulus   string `json:"n"`
 }
 
+func generateKIDFromPublicKey(publicKey *rsa.PublicKey) string {
+	hash := sha256.Sum256(publicKey.N.Bytes())
+	kid := hex.EncodeToString(hash[:])
+	return kid
+}
+
 func createJwt(privKey *rsa.PrivateKey, fingerprint string, frontEndID string) (string, error) {
 	myClaims := myJWKClaims{
 		KeyType:   "RSA",
 		Usage:     "sig",
-		KeyID:     "test1234",
+		KeyID:     generateKIDFromPublicKey(&privKey.PublicKey),
 		Algorithm: "RS256",
 		Exponent:  strconv.Itoa(privKey.PublicKey.E),
 		Modulus:   privKey.PublicKey.N.String(),
