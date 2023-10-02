@@ -14,24 +14,6 @@ type ChallengeObject struct {
 	NonceToken string
 }
 
-type MyJWTClaims struct {
-	typ           string
-	alg           string
-	frontendAppID string
-	exp           string
-	fingerprint   string
-	jwk           myJWKClaims
-}
-
-type myJWKClaims struct {
-	KeyType   string `json:"kty"`
-	Usage     string `json:"use"`
-	KeyID     string `json:"kid"`
-	Algorithm string `json:"alg"`
-	Exponent  string `json:"e"`
-	Modulus   string `json:"n"`
-}
-
 func LoadPrivateKeyFromFile(filename string) (*rsa.PrivateKey, error) {
 	keyFile, err := os.ReadFile(filename)
 	if err != nil {

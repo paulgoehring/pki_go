@@ -33,8 +33,15 @@ func GetCertificate() {
 	}
 
 	signedToken, err := signToken(fingerprint, privateKey)
+	if err != nil {
+		fmt.Println("Error signing token", err)
+	}
 
-	newJwt := createJwt(privateKey, signedToken, appID)
+	newJwt, err := createJwt(privateKey, signedToken, appID)
+	if err != nil {
+		fmt.Println("Error creating JWT token", err)
+	}
+	fmt.Println(newJwt)
 
 	req, err := http.NewRequest("GET", "http://localhost:8080/getCert", nil)
 	req.Header.Set("Authorization", "Bearer "+newJwt)
@@ -71,7 +78,7 @@ type myJWKClaims struct {
 	Modulus   string `json:"n"`
 }
 
-func createJwt(privKey *rsa.PrivateKey, fingerprint string, frontEndID string) string {
+func createJwt(privKey *rsa.PrivateKey, fingerprint string, frontEndID string) (string, error) {
 	myClaims := myJWKClaims{
 		KeyType:   "RSA",
 		Usage:     "sig",
@@ -90,13 +97,13 @@ func createJwt(privKey *rsa.PrivateKey, fingerprint string, frontEndID string) s
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
 	tokenString, err := token.SignedString(privKey)
 	if err != nil {
-		return ""
+		return "", err
 	}
-	return tokenString
+	return tokenString, nil
 }
 
 func getChallenge() []byte {
-	request1, err := http.Get(fmt.Sprintf("http://localhost:443/getChallenge?appID=%v", "asd123"))
+	request1, err := http.Get(fmt.Sprintf("http://localhost:8080/getChallenge?appID=%v", "asd123"))
 	if err != nil {
 		fmt.Println("Could not reach Server", err)
 		return nil

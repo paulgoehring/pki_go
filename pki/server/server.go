@@ -10,7 +10,7 @@ import (
 
 	"github.com/golang-jwt/jwt"
 
-	//client "server/clientutils"
+	client "server/clientutils"
 	myutils "server/myutils"
 	server "server/serverutils"
 )
@@ -47,7 +47,7 @@ func init() {
 
 	// get certificate from root pkis
 	// same as in client
-	// go client.GetCertificate()
+	go client.GetCertificate()
 
 }
 
@@ -60,6 +60,7 @@ func HandleGetCert(w http.ResponseWriter, r *http.Request) {
 	tokenString := r.Header.Get("Authorization")[7:]
 
 	parsedToken, _ := jwt.Parse(tokenString, nil)
+	privateKey, err := server.LoadPrivateKeyFromFile("private.key")
 
 	claims, ok := parsedToken.Claims.(jwt.MapClaims)
 	if !ok {
@@ -106,6 +107,11 @@ func HandleGetCert(w http.ResponseWriter, r *http.Request) {
 	} else {
 		fmt.Println("Unsuccessfull", err)
 	}
+
+	newJwt := server.CreateJwt(privateKey, frontendAppID, recreatePubKey)
+
+	w.Header().Set("Content-Type", "application/json")
+	fmt.Fprint(w, newJwt)
 
 	// Now give back jwt signed by server as response, validate at rpki endpoint at the end
 

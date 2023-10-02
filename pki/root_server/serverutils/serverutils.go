@@ -10,6 +10,10 @@ import (
 	"encoding/pem"
 	"fmt"
 	"os"
+	"strconv"
+	"time"
+
+	"github.com/golang-jwt/jwt"
 )
 
 func VerifySignature(token, signature string, publicKey *rsa.PublicKey) (bool, error) {
@@ -27,6 +31,39 @@ func VerifySignature(token, signature string, publicKey *rsa.PublicKey) (bool, e
 	return true, nil // Verification successful
 }
 
+type myJWKClaims struct {
+	KeyType   string `json:"kty"`
+	Usage     string `json:"use"`
+	KeyID     string `json:"kid"`
+	Algorithm string `json:"alg"`
+	Exponent  string `json:"e"`
+	Modulus   string `json:"n"`
+}
+
+func CreateJwt(privKey *rsa.PrivateKey, frontEndID string, publicKey *rsa.PublicKey) string {
+	myClaims := myJWKClaims{
+		KeyType:   "RSA",
+		Usage:     "sig",
+		KeyID:     "test12345", // here maybe hash of the key idk how this works
+		Algorithm: "RS256",
+		Exponent:  strconv.Itoa(publicKey.E),
+		Modulus:   publicKey.N.String(),
+	}
+	claims := jwt.MapClaims{
+		"sub": frontEndID,
+		"iss": "server",
+		"kid": "serverkeyid",
+		"exp": time.Now().Add(time.Hour * 1).Unix(),
+		"jwk": myClaims,
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+	tokenString, err := token.SignedString(privKey)
+	if err != nil {
+		return ""
+	}
+	return tokenString
+}
+
 func GenerateNonce() string {
 	// TODO check if in nonce map
 	nonceBytes := make([]byte, 32)
@@ -39,7 +76,7 @@ func GenerateNonce() string {
 	return nonce
 }
 
-func loadPrivateKeyFromFile(filename string) (*rsa.PrivateKey, error) {
+func LoadPrivateKeyFromFile(filename string) (*rsa.PrivateKey, error) {
 	keyFile, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, err

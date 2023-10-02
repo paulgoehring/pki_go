@@ -1,35 +1,34 @@
 package main
 
 import (
-	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
-	"crypto/x509/pkix"
 	"encoding/pem"
 	"fmt"
-	"io"
 	"math/big"
 	"net/http"
-	"os"
 	"sync"
 	"time"
 
+	"github.com/golang-jwt/jwt"
+
 	myutils "rpki/myutils"
+	root "rpki/rootutils"
 	server "rpki/serverutils"
 )
 
 var privateKey *rsa.PrivateKey
 var publicKey *rsa.PublicKey
 var ca *x509.Certificate
-var (
-	certificatesMutex sync.RWMutex
-	validCertificates []*x509.Certificate
-)
+var PublicKeyMap = sync.Map{}
 
 var challenges map[string]myutils.ChallengeObject
 
 // store root cert and issued certs
 var issued []string
+
+// look up backend id, format is [frontendID]backendID
+var tableAppIDs map[string]string
 
 // var root cert
 
@@ -37,7 +36,7 @@ func main() {
 	// for testing client port 80, pkis port 443, rpkis port 8080
 	// listen to requests and give out challenges and if successfull issue certificates
 	http.HandleFunc("/getChallenge", HandleGetChallenge)
-	http.HandleFunc("/getCert", handleGetCert)
+	http.HandleFunc("/getCert", HandleGetCert)
 	http.HandleFunc("/.well-known/certs", showCerts)
 	http.ListenAndServe(":8080", nil)
 
@@ -51,104 +50,82 @@ func init() {
 	myutils.CreateKeyPair("private.key")
 
 	challenges = make(map[string]myutils.ChallengeObject)
+	tableAppIDs = make(map[string]string)
+
+	PublicKeyMap = sync.Map{}
+
+	tableAppIDs["asd123"] = "asd123"
 
 	// create root certificate
-	createRootCert("test", "test12", "test123", "test1234", "test12345", "test123456", "ca.crt")
+	//createRootCert("test", "test12", "test123", "test1234", "test12345", "test123456", "ca.crt")
 }
 
-func createRootCert(organization string, country string, province string, locality string, streedAddress string, postalCode string, crtPath string) {
-	// creates a root certificate and stores it under
-	// create (Root)Signing - Certificate template
-	privateKey, err := myutils.LoadPrivateKeyFromFile("private.key")
-	publicKey := &privateKey.PublicKey
-	//fmt.Println(publicKey, privateKey)
-	ca := createCertificateTemplate(organization, country, province, locality, streedAddress, postalCode)
-	certCa, err := x509.CreateCertificate(rand.Reader, ca, ca, publicKey, privateKey)
-	if err != nil {
-		fmt.Println("create ca failed", err)
-		return
-	}
-	// Store Certificate
-	certOut, err := os.Create(crtPath)
-	pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: certCa})
-	certOut.Close()
-	fmt.Print("written root cert\n")
-
-	cert, err := x509.ParseCertificate(certCa)
-	if err != nil {
-		return
-	}
-	certificatesMutex.Lock()
-	defer certificatesMutex.Unlock()
-	validCertificates = append(validCertificates, cert)
-
-}
-
-func handleGetCert(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
+func HandleGetCert(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
 		http.Error(w, "No valid Method", http.StatusMethodNotAllowed)
 		return
 	}
 	fmt.Println("Got Certification request")
-	// get parameters: pubKey , id and token
-	//publicKey := r.URL.Query().Get("pubKey")
+	tokenString := r.Header.Get("Authorization")[7:]
 
-	address := server.ReadUserIP(r)
-	//fmt.Println(address)
-	// verify if appID is valid ID(valid Hash)
-	//appID := challenges[address].ID
-	nonceToken := challenges[address].NonceToken
+	parsedToken, _ := jwt.Parse(tokenString, nil)
+	privateKey, err := server.LoadPrivateKeyFromFile("private.key")
 
-	// here has to be url from challenger
-	request1, err := http.Get(fmt.Sprintf("http://localhost:443//.well-known/acme-challenge/%v", nonceToken))
-	if err != nil {
-		fmt.Println("Could not reach Server", err)
+	claims, ok := parsedToken.Claims.(jwt.MapClaims)
+	if !ok {
+		// handle invalid claims ?
+		fmt.Println("Invalid JWT claims")
 		return
 	}
-	defer request1.Body.Close()
-	// here check results
-	signedFingerprint, err := io.ReadAll(request1.Body)
-	fingerprintString := string(signedFingerprint)
 
-	// check here if token and request stuff is in database
-	// if yes send back signed cert and delete from data
-	// challenge: encrypted app id (fingerabdruck) under the link of token
+	publicKeyData := claims["jwk"].(map[string]interface{})
+	n1, _ := publicKeyData["n"].(string)
+	e1, _ := publicKeyData["e"].(string)
 
-	csrPem, err := io.ReadAll(r.Body)
-	publicKey1 := server.GetPublicKeyFromCSR(csrPem)
+	n2 := new(big.Int)
+	n2.SetString(n1, 10)
 
-	// TODO fix this mess, make it work
+	e2 := new(big.Int)
+	e2.SetString(e1, 10)
 
-	ver, err := server.VerifySignature(nonceToken, fingerprintString, publicKey1)
-	if ver == false {
-		w.Header().Set("Content-Type", "text/plain")
-		fmt.Println("could not verify")
-		fmt.Println("nonce:", nonceToken)
-		fmt.Println("finger:", fingerprintString)
-		//fmt.Print(ver, publicKey, csrPem)
-
-		fmt.Fprint(w, string("Could not verify"))
-		return
+	recreatePubKey := &rsa.PublicKey{
+		N: n2,
+		E: int(e2.Int64()),
 	}
-	fmt.Println("Verification successfull!")
+	publicKeyPEM22 := &pem.Block{
+		Type:  "RSA PUBLIC KEY",
+		Bytes: x509.MarshalPKCS1PublicKey(recreatePubKey),
+	}
+	fmt.Println("\nPublic Key in PEM Format:")
+	publicKeyString := string(pem.EncodeToMemory(publicKeyPEM22))
+	fmt.Println(publicKeyString)
 
-	if err != nil {
-		http.Error(w, "Error reading request Body", http.StatusInternalServerError)
+	//modulus := new(big.Int)
+	//modulus.SetString(publicKeyJSON.n, 10)
+
+	//frontendAppID := r.URL.Query().Get("appID")
+	signedFingerprint := claims["fingerprint"].(string)
+	frontendAppID := claims["sub"].(string)
+
+	fingerprintToVerify := challenges[frontendAppID].NonceToken + challenges[frontendAppID].ID
+
+	// here check if nonce + appID correct, every nonce needs a number for map i guess, after delete from data structure
+	ver, err := server.VerifySignature(fingerprintToVerify, signedFingerprint, recreatePubKey)
+	if ver {
+		fmt.Println("Verification successfull")
+	} else {
+		fmt.Println("Unsuccessfull", err)
 	}
 
-	certBytes := server.CrsToCrt(csrPem)
-	cert, err := x509.ParseCertificate(certBytes)
-	if err != nil {
-		return
-	}
-	certificatesMutex.Lock()
-	defer certificatesMutex.Unlock()
-	// delete all expired Certificates in Data structure
-	validCertificates = deleteExpiredCerts(validCertificates)
-	validCertificates = append(validCertificates, cert)
-	w.Header().Set("Content-Type", "application/x-pem-file")
-	w.WriteHeader(http.StatusOK)
-	w.Write(certBytes)
+	newJwt, newValidJwt := root.CreateJwt(privateKey, frontendAppID, recreatePubKey)
+
+	w.Header().Set("Content-Type", "application/json")
+	fmt.Fprint(w, newJwt)
+
+	PublicKeyMap.Store(newValidJwt.Kid, newValidJwt)
+
+	// Now give back jwt signed by server as response, validate at rpki endpoint at the end
+
 }
 
 func HandleGetChallenge(w http.ResponseWriter, r *http.Request) {
@@ -156,61 +133,40 @@ func HandleGetChallenge(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "No valid Method", http.StatusMethodNotAllowed)
 		return
 	}
-
 	fmt.Println("Got Challenge Request")
 
-	address := r.RemoteAddr
-	appID := r.URL.Query().Get("appID")
-	nonce := server.GenerateNonce()
+	frontendAppID := r.URL.Query().Get("appID")
+	backendAppID := tableAppIDs[frontendAppID]
 
-	if appID != "" {
+	nonce := server.GenerateNonce()
+	if frontendAppID != "" {
 		newRequest := myutils.ChallengeObject{
-			ID:         appID,
-			URL:        address,
+			ID:         backendAppID,
 			NonceToken: nonce,
 		}
 		//fmt.Println(newRequest.ID, newRequest.URL, newRequest.NonceToken)
-		challenges[address] = newRequest
+		challenges[frontendAppID] = newRequest
 	} else {
 		fmt.Println("value for AppID missing")
 		nonce = "Value for AppID missing"
 	}
-
 	fmt.Println(fmt.Sprintf("Sent challenge: %v", nonce))
+
 	w.Header().Set("Content-Type", "text/plain")
 	fmt.Fprint(w, nonce)
-
-}
-
-func createCertificateTemplate(organization string, country string, province string, locality string, streedAddress string, postalCode string) *x509.Certificate {
-	ca := &x509.Certificate{
-		SerialNumber: big.NewInt(1653),
-		Subject: pkix.Name{
-			Organization:  []string{organization},
-			Country:       []string{country},
-			Province:      []string{province},
-			Locality:      []string{locality},
-			StreetAddress: []string{streedAddress},
-			PostalCode:    []string{postalCode},
-		},
-		NotBefore:             time.Now(),
-		NotAfter:              time.Now().AddDate(10, 0, 0),
-		IsCA:                  true,
-		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
-		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
-		BasicConstraintsValid: true,
-	}
-	return ca
 }
 
 func showCerts(w http.ResponseWriter, r *http.Request) {
-	certificatesMutex.RLock()
-	defer certificatesMutex.RUnlock()
-	w.Header().Set("Content-Type", "text/plain")
-	for _, cert := range validCertificates {
-		displayCertificate(cert, w)
-		w.Write([]byte("/n/n"))
-	}
+	// firste check for expired certificates
+	deleteExpiredCerts()
+
+	// give out all valid stuff
+	PublicKeyMap.Range(func(key, value interface{}) bool {
+		fmt.Printf("Key: %v\nValue: %+v\n", key, value)
+		return true
+	})
+	fmt.Println(PublicKeyMap)
+
 }
 
 func displayCertificate(cert *x509.Certificate, w http.ResponseWriter) {
@@ -223,15 +179,13 @@ func displayCertificate(cert *x509.Certificate, w http.ResponseWriter) {
 	w.Write([]byte("\n"))
 }
 
-func deleteExpiredCerts(certificates []*x509.Certificate) []*x509.Certificate {
-	currentTime := time.Now()
-	var filtered []*x509.Certificate
-
-	for _, cert := range certificates {
-		if currentTime.Before(cert.NotAfter) {
-			filtered = append(filtered, cert)
+func deleteExpiredCerts() {
+	PublicKeyMap.Range(func(key, value interface{}) bool {
+		if publicKeyInfo, ok := value.(*root.PublicKeyInfo); ok {
+			if publicKeyInfo.Exp.Before(time.Now()) {
+				PublicKeyMap.Delete(key)
+			}
 		}
-	}
-
-	return filtered
+		return true
+	})
 }
