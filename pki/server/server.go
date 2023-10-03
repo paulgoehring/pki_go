@@ -17,9 +17,6 @@ import (
 
 // for testing client port 80, pkis port 443, rpkis port 8080
 
-var privateKey *rsa.PrivateKey
-var publicKey *rsa.PublicKey
-
 // maybe add expire date for challenge
 var challenges map[string]myutils.ChallengeObject
 

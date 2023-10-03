@@ -29,7 +29,7 @@ type myJWKClaims struct {
 	Modulus   string `json:"n"`
 }
 
-func generateKIDFromPublicKey(publicKey *rsa.PublicKey) string {
+func GenerateKIDFromPublicKey(publicKey *rsa.PublicKey) string {
 	hash := sha256.Sum256(publicKey.N.Bytes())
 	kid := hex.EncodeToString(hash[:])
 	return kid
@@ -41,7 +41,7 @@ func CreateJwt(privKey *rsa.PrivateKey, frontEndID string, publicKey *rsa.Public
 	myClaims := myJWKClaims{
 		KeyType:   "RSA",
 		Usage:     "sig",
-		KeyID:     generateKIDFromPublicKey(publicKey), // here maybe hash of the key idk how this works
+		KeyID:     GenerateKIDFromPublicKey(publicKey), // here maybe hash of the key idk how this works
 		Algorithm: "RS256",
 		Exponent:  strconv.Itoa(publicKey.E),
 		Modulus:   publicKey.N.String(),
@@ -49,13 +49,13 @@ func CreateJwt(privKey *rsa.PrivateKey, frontEndID string, publicKey *rsa.Public
 	claims := jwt.MapClaims{
 		"sub": frontEndID,
 		"iss": "server",
-		"kid": generateKIDFromPublicKey(&privKey.PublicKey),
+		"kid": GenerateKIDFromPublicKey(&privKey.PublicKey),
 		"exp": expiration.Unix(),
 		"jwk": myClaims,
 	}
 	publicKeyData := PublicKeyInfo{
 		E:   strconv.Itoa(publicKey.E),
-		Kid: generateKIDFromPublicKey(publicKey),
+		Kid: GenerateKIDFromPublicKey(publicKey),
 		N:   publicKey.N.String(),
 		Use: "sig",
 		Kty: "RSA",

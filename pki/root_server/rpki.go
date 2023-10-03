@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math/big"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -17,15 +18,9 @@ import (
 	server "rpki/serverutils"
 )
 
-var privateKey *rsa.PrivateKey
-var publicKey *rsa.PublicKey
-var ca *x509.Certificate
 var PublicKeyMap = sync.Map{}
 
 var challenges map[string]myutils.ChallengeObject
-
-// store root cert and issued certs
-var issued []string
 
 // look up backend id, format is [frontendID]backendID
 var tableAppIDs map[string]string
@@ -55,6 +50,19 @@ func init() {
 	PublicKeyMap = sync.Map{}
 
 	tableAppIDs["asd123"] = "asd123"
+	privateKey, _ := server.LoadPrivateKeyFromFile("private.key")
+	publicKey := &privateKey.PublicKey
+	expiration := time.Now().Add(time.Hour * 8760)
+	publicKeyData := root.PublicKeyInfo{
+		E:   strconv.Itoa(publicKey.E),
+		Kid: root.GenerateKIDFromPublicKey(publicKey),
+		N:   publicKey.N.String(),
+		Use: "sig",
+		Kty: "RSA",
+		Alg: "RS256",
+		Exp: expiration,
+	}
+	PublicKeyMap.Store(publicKeyData.Kid, publicKeyData)
 
 	// create root certificate
 	//createRootCert("test", "test12", "test123", "test1234", "test12345", "test123456", "ca.crt")
