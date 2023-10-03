@@ -1,76 +1,61 @@
 package clientutils
 
 import (
-	"bytes"
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/x509"
-	"crypto/x509/pkix"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/pem"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"strconv"
+	"time"
+
+	"github.com/golang-jwt/jwt"
 )
 
 func GetCertificate() {
-	// get token
+	// placeholder
+	appID := "asd123"
 	nonceToken := getChallenge()
 	challenge := string(nonceToken)
-	fmt.Println("Reqeust Certificate")
-	// upload token + proof of possession of public key(encrypt hashed appID) +
-	go http.HandleFunc(fmt.Sprintf("/.well-known/acme-challenge/%v", challenge), uploadToken(nonceToken))
-	go http.ListenAndServe(":80", nil)
 
-	// create csr and send it
-	csrPEM := createCSR()
-	//fmt.Println(csrPEM)
-	request, err := http.Post("http://localhost:443/getCert", "application/x-pem-file", bytes.NewReader(csrPEM))
+	fmt.Println("Request Token")
+
+	fingerprint := challenge + appID
+	privateKey, err := loadPrivateKeyFromFile("private.key")
 	if err != nil {
-		fmt.Println("Could not reach Server", err)
+		fmt.Println("Error loading private key", err)
+	}
+
+	signedToken, err := signToken(fingerprint, privateKey)
+	if err != nil {
+		fmt.Println("Error signing token", err)
+	}
+
+	newJwt, err := createJwt(privateKey, signedToken, appID)
+	if err != nil {
+		fmt.Println("Error creating JWT token", err)
+	}
+	fmt.Println(newJwt)
+
+	req, err := http.NewRequest("GET", "http://localhost:443/getCert", nil)
+	req.Header.Set("Authorization", "Bearer "+newJwt)
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
 		return
 	}
-	defer request.Body.Close()
-	result, err := io.ReadAll(request.Body)
-	if err != nil {
-		fmt.Println("Bad result", err)
-		return
-	}
-	// receive certificate and store in file
-	certFile, err := os.Create("client.crt")
-	if err != nil {
-		fmt.Println("Error creating file", err)
-		return
-	}
-	pem.Encode(certFile, &pem.Block{Type: "CERTIFICATE", Bytes: result})
-	certFile.Close()
-	fmt.Println("Received Certificate successfull!")
-}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
 
-func uploadToken(nonceToken []byte) http.HandlerFunc {
-	// TODO: encrypt hashed app id(finger print) to make proof of possession of public key
-	// get app id from marblerun certificate
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "No valid Method", http.StatusMethodNotAllowed)
-			return
-		}
-		privateKey, err := loadPrivateKeyFromFile("private.key")
-		if err != nil {
-			fmt.Println("Error loading private key", err)
-		}
-		// Use here later AppID/Fingerprint since we have token already in URL
-		signedToken, err := signToken(string(nonceToken), privateKey)
-		if err != nil {
-			fmt.Println("Error encrypting token", err)
-		}
-		w.Header().Set("Content-Type", "text/plain")
-		fmt.Fprint(w, signedToken)
-
-	}
+	fmt.Println("Response: ")
+	fmt.Println(string(body))
 
 }
 
@@ -85,8 +70,47 @@ func signToken(token string, privateKey *rsa.PrivateKey) (string, error) {
 
 }
 
+type myJWKClaims struct {
+	KeyType   string `json:"kty"`
+	Usage     string `json:"use"`
+	KeyID     string `json:"kid"`
+	Algorithm string `json:"alg"`
+	Exponent  string `json:"e"`
+	Modulus   string `json:"n"`
+}
+
+func generateKIDFromPublicKey(publicKey *rsa.PublicKey) string {
+	hash := sha256.Sum256(publicKey.N.Bytes())
+	kid := hex.EncodeToString(hash[:])
+	return kid
+}
+
+func createJwt(privKey *rsa.PrivateKey, fingerprint string, frontEndID string) (string, error) {
+	myClaims := myJWKClaims{
+		KeyType:   "RSA",
+		Usage:     "sig",
+		KeyID:     generateKIDFromPublicKey(&privKey.PublicKey),
+		Algorithm: "RS256",
+		Exponent:  strconv.Itoa(privKey.PublicKey.E),
+		Modulus:   privKey.PublicKey.N.String(),
+	}
+	claims := jwt.MapClaims{
+		"sub":         frontEndID,
+		"iss":         "client",
+		"fingerprint": fingerprint,
+		"exp":         time.Now().Add(time.Hour * 1).Unix(),
+		"jwk":         myClaims,
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+	tokenString, err := token.SignedString(privKey)
+	if err != nil {
+		return "", err
+	}
+	return tokenString, nil
+}
+
 func getChallenge() []byte {
-	request1, err := http.Get(fmt.Sprintf("http://localhost:443/getChallenge?appID=%v", "blaAppId1"))
+	request1, err := http.Get(fmt.Sprintf("http://localhost:443/getChallenge?appID=%v", "asd123"))
 	if err != nil {
 		fmt.Println("Could not reach Server", err)
 		return nil
@@ -96,35 +120,6 @@ func getChallenge() []byte {
 	nonceToken, err := io.ReadAll(request1.Body)
 	fmt.Println(fmt.Sprintf("Got Challenge: %v", string(nonceToken)))
 	return nonceToken
-}
-
-func createCSR() []byte {
-
-	privateKey, err := loadPrivateKeyFromFile("private.key")
-	if err != nil {
-		fmt.Println("Could not load Private key")
-	}
-	data := pkix.Name{
-		Country:            []string{"TESTESTETSTSAT"},
-		Organization:       []string{"tetasdasd"},
-		OrganizationalUnit: []string{"asdasdasd"},
-		CommonName:         "localhost.com",
-	}
-	template := x509.CertificateRequest{
-		Subject:            data,
-		SignatureAlgorithm: x509.SHA256WithRSA,
-	}
-	csrDER, err := x509.CreateCertificateRequest(rand.Reader, &template, privateKey)
-	if err != nil {
-		fmt.Println("Error creating CSR:", err)
-	}
-
-	csrPEM := pem.EncodeToMemory(&pem.Block{
-		Type:  "CERTIFICATE REQUEST",
-		Bytes: csrDER,
-	})
-	return csrPEM
-
 }
 
 // maybe utils

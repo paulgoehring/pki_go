@@ -7,93 +7,15 @@ import (
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/pem"
 	"fmt"
-	"math/big"
-	"net/http"
 	"os"
+	"strconv"
 	"time"
+
+	"github.com/golang-jwt/jwt"
 )
-
-func ReadUserIP(r *http.Request) string {
-	IPAddress := r.Header.Get("X-Real-Ip")
-	if IPAddress == "" {
-		IPAddress = r.Header.Get("X-Forwarded-For")
-	}
-	if IPAddress == "" {
-		IPAddress = r.RemoteAddr
-	}
-	return IPAddress
-}
-
-func CrsToCrt(csr []byte) []byte {
-	// load CA key pair
-	//      public key
-	caPublicKeyFile, err := os.ReadFile("ca.crt")
-	if err != nil {
-		panic(err)
-	}
-	pemBlock, _ := pem.Decode(caPublicKeyFile)
-	if pemBlock == nil {
-		panic("pem.Decode failed")
-	}
-	caCRT, err := x509.ParseCertificate(pemBlock.Bytes)
-	if err != nil {
-		panic("bla")
-	}
-
-	//      private key
-	caPrivateKey, err := loadPrivateKeyFromFile("private.key")
-
-	// load client certificate request
-	//clientCSRFile, err := os.ReadFile("client.csr")
-	//if err != nil {
-	//	panic(err)
-	//}
-	pemBlock, _ = pem.Decode(csr)
-	if pemBlock == nil {
-		panic("pem.Decode failed")
-	}
-	clientCSR, err := x509.ParseCertificateRequest(pemBlock.Bytes)
-	if err != nil {
-		panic(err)
-	}
-	if err = clientCSR.CheckSignature(); err != nil {
-		panic(err)
-	}
-
-	// create client certificate template
-	clientCRTTemplate := x509.Certificate{
-		Signature:          clientCSR.Signature,
-		SignatureAlgorithm: clientCSR.SignatureAlgorithm,
-
-		PublicKeyAlgorithm: clientCSR.PublicKeyAlgorithm,
-		PublicKey:          clientCSR.PublicKey,
-
-		SerialNumber: big.NewInt(2),
-		Issuer:       caCRT.Subject,
-		Subject:      clientCSR.Subject,
-		NotBefore:    time.Now(),
-		NotAfter:     time.Now().Add(24 * time.Hour),
-		KeyUsage:     x509.KeyUsageDigitalSignature,
-		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
-	}
-
-	// create client certificate from template and CA public key
-	clientCRTRaw, err := x509.CreateCertificate(rand.Reader, &clientCRTTemplate, caCRT, clientCSR.PublicKey, caPrivateKey)
-	if err != nil {
-		panic(err)
-	}
-	//clientCRTPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: clientCRTRaw})
-	clientCRTFile, err := os.Create("client.crt")
-	if err != nil {
-		panic(err)
-	}
-	pem.Encode(clientCRTFile, &pem.Block{Type: "CERTIFICATE", Bytes: clientCRTRaw})
-	clientCRTFile.Close()
-
-	return clientCRTRaw
-}
 
 func VerifySignature(token, signature string, publicKey *rsa.PublicKey) (bool, error) {
 	decodedSignature, err := base64.StdEncoding.DecodeString(signature)
@@ -110,19 +32,43 @@ func VerifySignature(token, signature string, publicKey *rsa.PublicKey) (bool, e
 	return true, nil // Verification successful
 }
 
-func GetPublicKeyFromCSR(csrPEM []byte) *rsa.PublicKey {
-	data, _ := pem.Decode([]byte(csrPEM))
-	if data == nil || data.Type != "CERTIFICATE REQUEST" {
-		fmt.Println("Can`t decode CSR")
-		return nil
+type myJWKClaims struct {
+	KeyType   string `json:"kty"`
+	Usage     string `json:"use"`
+	KeyID     string `json:"kid"`
+	Algorithm string `json:"alg"`
+	Exponent  string `json:"e"`
+	Modulus   string `json:"n"`
+}
+
+func generateKIDFromPublicKey(publicKey *rsa.PublicKey) string {
+	hash := sha256.Sum256(publicKey.N.Bytes())
+	kid := hex.EncodeToString(hash[:])
+	return kid
+}
+
+func CreateJwt(privKey *rsa.PrivateKey, frontEndID string, publicKey *rsa.PublicKey) string {
+	myClaims := myJWKClaims{
+		KeyType:   "RSA",
+		Usage:     "sig",
+		KeyID:     generateKIDFromPublicKey(publicKey), // here maybe hash of the key idk how this works
+		Algorithm: "RS256",
+		Exponent:  strconv.Itoa(publicKey.E),
+		Modulus:   publicKey.N.String(),
 	}
-	csr, err := x509.ParseCertificateRequest(data.Bytes)
+	claims := jwt.MapClaims{
+		"sub": frontEndID,
+		"iss": "server",
+		"kid": generateKIDFromPublicKey(&privKey.PublicKey),
+		"exp": time.Now().Add(time.Hour * 1).Unix(),
+		"jwk": myClaims,
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+	tokenString, err := token.SignedString(privKey)
 	if err != nil {
-		fmt.Println("Can`t parse CSR", err)
-		return nil
+		return ""
 	}
-	publicKey := csr.PublicKey.(*rsa.PublicKey)
-	return publicKey
+	return tokenString
 }
 
 func GenerateNonce() string {
@@ -137,7 +83,7 @@ func GenerateNonce() string {
 	return nonce
 }
 
-func loadPrivateKeyFromFile(filename string) (*rsa.PrivateKey, error) {
+func LoadPrivateKeyFromFile(filename string) (*rsa.PrivateKey, error) {
 	keyFile, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, err

@@ -11,7 +11,6 @@ import (
 
 type ChallengeObject struct {
 	ID         string
-	URL        string
 	NonceToken string
 }
 
