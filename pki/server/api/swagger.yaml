@@ -1,0 +1,98 @@
+openapi: 3.0.0
+info:
+  title: pki.in GO
+  description: pki in API docs
+  contact:
+    name: Paul Göhring
+    email: paul.goehring@student.uni-tuebingen.de
+  version: 1.0.0
+servers:
+- url: /
+paths:
+  /getChallenge:
+    get:
+      description: Get a Nonce Token
+      parameters:
+      - name: appID
+        in: query
+        required: true
+        style: form
+        explode: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: Successful response
+          content:
+            text/plain:
+              schema:
+                type: string
+                x-content-type: text/plain
+  /getToken:
+    get:
+      description: Get a Token
+      responses:
+        "200":
+          description: 200 response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/jwt'
+components:
+  schemas:
+    jwt:
+      type: object
+      properties:
+        kty:
+          type: string
+          description: key type
+        iss:
+          type: string
+          description: issuer
+        exp:
+          type: string
+          description: expiration date
+        kid:
+          type: string
+          description: key id of server key which signs jwt
+        jwk:
+          $ref: '#/components/schemas/jwk'
+      example:
+        kty: kty
+        kid: kid
+        iss: iss
+        exp: exp
+        jwk:
+          kty: kty
+          e: e
+          use: use
+          kid: kid
+          alg: alg
+          "n": "n"
+    jwk:
+      required:
+      - e
+      - kty
+      - "n"
+      type: object
+      properties:
+        kty:
+          type: string
+        use:
+          type: string
+        alg:
+          type: string
+        "n":
+          type: string
+        e:
+          type: string
+        kid:
+          type: string
+      description: public key information of client
+      example:
+        kty: kty
+        e: e
+        use: use
+        kid: kid
+        alg: alg
+        "n": "n"

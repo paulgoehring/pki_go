@@ -22,18 +22,18 @@ import (
 func GetCertificate() {
 	// placeholder
 	appID := "asd123"
-	nonceToken := getChallenge()
+	nonceToken := GetChallenge()
 	challenge := string(nonceToken)
 
 	fmt.Println("Request Token")
 
 	fingerprint := challenge + appID
-	privateKey, err := loadPrivateKeyFromFile("private.key")
+	privateKey, err := LoadPrivateKeyFromFile("private.key")
 	if err != nil {
 		fmt.Println("Error loading private key", err)
 	}
 
-	signedToken, err := signToken(fingerprint, privateKey)
+	signedToken, err := SignToken(fingerprint, privateKey)
 	if err != nil {
 		fmt.Println("Error signing token", err)
 	}
@@ -59,7 +59,7 @@ func GetCertificate() {
 
 }
 
-func signToken(token string, privateKey *rsa.PrivateKey) (string, error) {
+func SignToken(token string, privateKey *rsa.PrivateKey) (string, error) {
 	hashed := sha256.Sum256([]byte(token))
 	result, err := rsa.SignPKCS1v15(rand.Reader, privateKey, crypto.SHA256, hashed[:])
 	if err != nil {
@@ -79,7 +79,7 @@ type myJWKClaims struct {
 	Modulus   string `json:"n"`
 }
 
-func generateKIDFromPublicKey(publicKey *rsa.PublicKey) string {
+func GenerateKIDFromPublicKey(publicKey *rsa.PublicKey) string {
 	hash := sha256.Sum256(publicKey.N.Bytes())
 	kid := hex.EncodeToString(hash[:])
 	return kid
@@ -89,7 +89,7 @@ func createJwt(privKey *rsa.PrivateKey, fingerprint string, frontEndID string) (
 	myClaims := myJWKClaims{
 		KeyType:   "RSA",
 		Usage:     "sig",
-		KeyID:     generateKIDFromPublicKey(&privKey.PublicKey),
+		KeyID:     GenerateKIDFromPublicKey(&privKey.PublicKey),
 		Algorithm: "RS256",
 		Exponent:  strconv.Itoa(privKey.PublicKey.E),
 		Modulus:   privKey.PublicKey.N.String(),
@@ -109,7 +109,7 @@ func createJwt(privKey *rsa.PrivateKey, fingerprint string, frontEndID string) (
 	return tokenString, nil
 }
 
-func getChallenge() []byte {
+func GetChallenge() []byte {
 	request1, err := http.Get(fmt.Sprintf("http://localhost:443/getChallenge?appID=%v", "asd123"))
 	if err != nil {
 		fmt.Println("Could not reach Server", err)
@@ -123,7 +123,7 @@ func getChallenge() []byte {
 }
 
 // maybe utils
-func loadPrivateKeyFromFile(filename string) (*rsa.PrivateKey, error) {
+func LoadPrivateKeyFromFile(filename string) (*rsa.PrivateKey, error) {
 	keyFile, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, err
