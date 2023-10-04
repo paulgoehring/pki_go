@@ -1,0 +1,96 @@
+openapi: 3.0.0
+info: 
+  title: pki.in GO
+  description: pki in API docs
+  version: 1.0.0
+  contact: 
+    email: paul.goehring@student.uni-tuebingen.de
+    name: Paul Göhring
+paths:
+  /getChallenge:
+    get:
+      description: Get a Nonce Token
+      parameters:
+        - name: appID
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            text/plain:
+              schema:
+                type: string
+  /getToken:
+    get:
+      description: Get a Token
+      responses:
+        "200":
+          description: 200 response
+          content: 
+            application/json:
+              schema:
+                $ref: "#/components/schemas/jwt"
+  /.well-known/certs:
+    get:
+      description: Show all valid Certificates. Optional Get Parameter kid to get JWT for specific key
+      parameters:
+        - name: kid
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 200 response
+          content: 
+            application/json:
+              schema:
+                $ref: "#/components/schemas/jwk"
+            text/plain:
+              schema:
+                type: string
+components:
+  schemas:
+    jwt:
+      type: object
+      properties:
+        kty:
+          description: key type
+          type: string
+        iss:
+          description: issuer
+          type: string
+        exp:
+          description: expiration date
+          type: string
+        kid:
+          description: key id of server key which signs jwt
+          type: string
+        jwk:
+          description: public key information of client
+          $ref: '#/components/schemas/jwk' 
+    
+    jwk:
+      type: object
+      description: public key information of client
+      required:
+        - kty
+        - n
+        - e
+      properties:
+        kty:
+          type: string
+        use:
+          type: string
+        alg:
+          type: string
+        n:
+          type: string
+        e:
+          type: string
+        kid:
+          type: string
+  
