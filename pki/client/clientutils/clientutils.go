@@ -44,7 +44,7 @@ func GetCertificate() {
 	}
 	fmt.Println(newJwt)
 
-	req, err := http.NewRequest("GET", "http://localhost:443/getCert", nil)
+	req, err := http.NewRequest("GET", "http://localhost:8081/getCert", nil)
 	req.Header.Set("Authorization", "Bearer "+newJwt)
 	client := &http.Client{}
 	resp, err := client.Do(req)
@@ -110,7 +110,7 @@ func createJwt(privKey *rsa.PrivateKey, fingerprint string, frontEndID string) (
 }
 
 func GetChallenge() []byte {
-	request1, err := http.Get(fmt.Sprintf("http://localhost:443/getChallenge?appID=%v", "asd123"))
+	request1, err := http.Get(fmt.Sprintf("http://localhost:8081/getChallenge?appID=%v", "asd123"))
 	if err != nil {
 		fmt.Println("Could not reach Server", err)
 		return nil

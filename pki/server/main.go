@@ -33,5 +33,5 @@ func main() {
 	router := server.NewRouter()
 
 	// for testing root:8080, server: 443, client:80
-	log.Fatal(http.ListenAndServe(":443", router))
+	log.Fatal(http.ListenAndServe(":8081", router))
 }
