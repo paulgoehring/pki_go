@@ -29,6 +29,10 @@ import (
 	"github.com/golang-jwt/jwt"
 )
 
+var rootIp string    //= "http://localhost"
+var rootPort string  //= "8080"
+var selfAppId string //= "asd123"
+
 // maybe add expire date for challenge
 var challenges map[string]ChallengeObject
 
@@ -47,6 +51,22 @@ type myJWKClaims struct {
 type ChallengeObject struct {
 	ID         string
 	NonceToken string
+}
+
+func Initialize() {
+	// create key pair
+	rootIp = "http://localhost"
+	rootPort = "8080"
+	selfAppId = "asd123"
+	CreateKeyPair("private.key")
+	challenges = make(map[string]ChallengeObject)
+	tableAppIDs = make(map[string]string)
+
+	tableAppIDs["asd123"] = "asd123"
+
+	// get certificate from root pkis
+	// same as in client
+	go GetCertificate()
 }
 
 func GetChallengeGet(w http.ResponseWriter, r *http.Request) {
@@ -144,19 +164,6 @@ func GetTokenGet(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, newJwt)
 
 	// Now give back jwt signed by server as response, validate at rpki endpoint at the end
-}
-
-func Initialize() {
-	// create key pair
-	CreateKeyPair("private.key")
-	challenges = make(map[string]ChallengeObject)
-	tableAppIDs = make(map[string]string)
-
-	tableAppIDs["asd123"] = "asd123"
-
-	// get certificate from root pkis
-	// same as in client
-	go GetCertificate()
 }
 
 func GetCertificate() {
@@ -330,7 +337,7 @@ func SignToken(token string, privateKey *rsa.PrivateKey) (string, error) {
 }
 
 func GetChallenge() []byte {
-	request1, err := http.Get(fmt.Sprintf("http://localhost:8080/getChallenge?appID=%v", "asd123"))
+	request1, err := http.Get(fmt.Sprintf("%v:%v/getChallenge?appID=%v", rootIp, rootPort, selfAppId))
 	if err != nil {
 		fmt.Println("Could not reach Server", err)
 		return nil
