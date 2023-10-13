@@ -17,19 +17,19 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"math/big"
 	"net/http"
 	"os"
 	"strconv"
-	"sync"
 	"time"
 
 	"github.com/golang-jwt/jwt"
 )
 
-var PublicKeyMap = sync.Map{}
+var PublicKeys []PublicKeyInfo
 var challenges map[string]ChallengeObject
 var tableAppIDs map[string]string
 
@@ -49,6 +49,10 @@ type PublicKeyInfo struct {
 	Exp time.Time `json:"exp"`
 }
 
+type KeyResponse struct {
+	Keys []PublicKeyInfo `json:"keys"`
+}
+
 type myJWKClaims struct {
 	KeyType   string `json:"kty"`
 	Usage     string `json:"use"`
@@ -58,8 +62,37 @@ type myJWKClaims struct {
 	Modulus   string `json:"n"`
 }
 
+func Initialize() {
+	//nonceTokens = make(map[string]int)
+	// create key pair
+	CreateKeyPair("private.key")
+
+	challenges = make(map[string]ChallengeObject)
+	tableAppIDs = make(map[string]string)
+
+	tableAppIDs["asd123"] = "asd123"
+	privateKey, _ := LoadPrivateKeyFromFile("private.key")
+	publicKey := &privateKey.PublicKey
+	expiration := time.Now().Add(time.Hour * 8760)
+	publicKeyData := PublicKeyInfo{
+		E:   strconv.Itoa(publicKey.E),
+		Kid: GenerateKIDFromPublicKey(publicKey),
+		N:   publicKey.N.String(),
+		Use: "sig",
+		Kty: "RSA",
+		Alg: "RS256",
+		Exp: expiration,
+	}
+	PublicKeys = append(PublicKeys, publicKeyData)
+	fmt.Println(PublicKeys)
+	fmt.Println(publicKeyData)
+
+	// create root certificate
+	//createRootCert("test", "test12", "test123", "test1234", "test12345", "test123456", "ca.crt")
+}
+
 func WellKnownCertsGet(w http.ResponseWriter, r *http.Request) {
-	DeleteExpiredCerts()
+	PublicKeys = DeleteExpiredCerts(PublicKeys)
 	keyID := r.URL.Query().Get("kid")
 	fmt.Println(keyID)
 	if keyID != "" {
@@ -159,38 +192,9 @@ func GetTokenGet(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	fmt.Fprint(w, newJwt)
 
-	PublicKeyMap.Store(newValidJwt.Kid, newValidJwt)
+	PublicKeys = append(PublicKeys, newValidJwt)
 
 	// Now give back jwt signed by server as response, validate at rpki endpoint at the end
-}
-
-func Initialize() {
-	//nonceTokens = make(map[string]int)
-	// create key pair
-	CreateKeyPair("private.key")
-
-	challenges = make(map[string]ChallengeObject)
-	tableAppIDs = make(map[string]string)
-
-	PublicKeyMap = sync.Map{}
-
-	tableAppIDs["asd123"] = "asd123"
-	privateKey, _ := LoadPrivateKeyFromFile("private.key")
-	publicKey := &privateKey.PublicKey
-	expiration := time.Now().Add(time.Hour * 8760)
-	publicKeyData := PublicKeyInfo{
-		E:   strconv.Itoa(publicKey.E),
-		Kid: GenerateKIDFromPublicKey(publicKey),
-		N:   publicKey.N.String(),
-		Use: "sig",
-		Kty: "RSA",
-		Alg: "RS256",
-		Exp: expiration,
-	}
-	PublicKeyMap.Store(publicKeyData.Kid, publicKeyData)
-
-	// create root certificate
-	//createRootCert("test", "test12", "test123", "test1234", "test12345", "test123456", "ca.crt")
 }
 
 func GetKeyDataByKid(w http.ResponseWriter, kid string) {
@@ -199,13 +203,12 @@ func GetKeyDataByKid(w http.ResponseWriter, kid string) {
 		fmt.Println("Could not load private Key")
 	}
 	w.Header().Set("Content-Type", "application/json")
-	PublicKeyMap.Range(func(key, value interface{}) bool {
-		if key == kid {
-			kidJwt := GiveKeyJwt(privateKey, value.(PublicKeyInfo))
+	for _, key := range PublicKeys {
+		if key.Kid == kid {
+			kidJwt := GiveKeyJwt(privateKey, key)
 			fmt.Fprint(w, kidJwt)
 		}
-		return true
-	})
+	}
 }
 
 func LoadPrivateKeyFromFile(filename string) (*rsa.PrivateKey, error) {
@@ -225,23 +228,27 @@ func LoadPrivateKeyFromFile(filename string) (*rsa.PrivateKey, error) {
 func ShowCerts(w http.ResponseWriter) {
 
 	// give out all valid stuff
-	w.Header().Set("Content-Type", "text/plain")
-	PublicKeyMap.Range(func(key, value interface{}) bool {
-		fmt.Fprintf(w, "Key: %v\nValue: %+v\n", key, value)
-		return true
-	})
+	response := KeyResponse{Keys: PublicKeys}
+
+	jsonResponse, err := json.MarshalIndent(response, "", "  ")
+	if err != nil {
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(jsonResponse)
 
 }
 
-func DeleteExpiredCerts() {
-	PublicKeyMap.Range(func(key, value interface{}) bool {
-		if publicKeyInfo, ok := value.(*PublicKeyInfo); ok {
-			if publicKeyInfo.Exp.Before(time.Now()) {
-				PublicKeyMap.Delete(key)
-			}
+func DeleteExpiredCerts(keys []PublicKeyInfo) []PublicKeyInfo {
+	currentTime := time.Now()
+	var validKeys []PublicKeyInfo
+	for _, key := range keys {
+		if key.Exp.After(currentTime) {
+			validKeys = append(validKeys, key)
 		}
-		return true
-	})
+	}
+	return validKeys
 }
 
 func CreateKeyPair(keyPath string) {
