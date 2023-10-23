@@ -23,3 +23,13 @@ To run the server, follow these simple steps:
 go run main.go
 ```
 
+
+### Build Confidential 
+
+ego-go build main.go
+
+ego sign server
+
+### Run Confidential
+
+ego run server

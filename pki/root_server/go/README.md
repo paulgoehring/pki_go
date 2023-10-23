@@ -23,3 +23,12 @@ To run the server, follow these simple steps:
 go run main.go
 ```
 
+### Build Confidential 
+
+ego-go build main.go
+
+ego sign rpki
+
+### Run Confidential
+
+ego run rpki
