@@ -1,0 +1,41 @@
+# Hello World manifest file example
+
+loader.entrypoint = "file:{{ gramine.libos }}"
+libos.entrypoint = "/client"
+loader.log_level = "{{ log_level }}"
+loadler.log_file = "asd.log"
+loader.insecure__use_host_env = true
+
+
+loader.env.LD_LIBRARY_PATH = "/lib"
+
+fs.mounts = [
+  { path = "/lib", uri = "file:{{ gramine.runtimedir() }}" },
+  { path = "/client", uri = "file:client" },
+  { type = "tmpfs", path = "/secrets" },
+]
+
+sgx.debug = true
+sgx.edmm_enable = {{ 'true' if env.get('EDMM', '0') == '1' else 'false' }}
+
+sgx.trusted_files = [
+  "file:{{ gramine.libos }}",
+  "file:client",
+  "file:{{ gramine.runtimedir() }}/",
+]
+
+sgx.allowed_files = [
+  "file:/etc/nsswitch.conf",
+  "file:/etc/ethers",
+  "file:/etc/hosts",
+  "file:/etc/group",
+  "file:/etc/passwd",
+  "file:/etc/localtime",
+  "file:/etc/host.conf",
+  "file:/etc/resolv.conf",
+  "file:/etc/hostname",
+  "file:/etc/gai.conf",
+]
+
+sgx.enclave_size = "2G"
+sgx.max_threads = 16

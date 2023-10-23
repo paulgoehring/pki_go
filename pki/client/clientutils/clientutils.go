@@ -28,7 +28,7 @@ func GetCertificate() {
 	fmt.Println("Request Token")
 
 	fingerprint := challenge + appID
-	privateKey, err := LoadPrivateKeyFromFile("private.key")
+	privateKey, err := LoadPrivateKeyFromFile("/secrets/private.key")
 	if err != nil {
 		fmt.Println("Error loading private key", err)
 	}
@@ -56,6 +56,14 @@ func GetCertificate() {
 
 	fmt.Println("Response: ")
 	fmt.Println(string(body))
+
+	jwtResponse := string(body)
+	filePath := "/secrets/client.jwt"
+
+	err = os.WriteFile(filePath, []byte(jwtResponse), 0644)
+	if err != nil {
+		fmt.Println("JWT could not be stored", err)
+	}
 
 }
 
