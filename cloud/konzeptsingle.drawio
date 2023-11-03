@@ -1,9 +1,51 @@
-<mxfile host="app.diagrams.net" modified="2023-11-03T01:35:35.178Z" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36" version="22.0.8" etag="XQ3cGULE062ARGjB1mm8" type="github">
+<mxfile host="app.diagrams.net" modified="2023-11-03T01:41:16.249Z" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36" etag="HdQwk_o-uotj8zqKe2Qg" version="22.0.8" type="github">
   <diagram name="Page-1" id="cIMbMJxQSpXa-NuSwrTK">
-    <mxGraphModel>
+    <mxGraphModel dx="1434" dy="756" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
+        <mxCell id="-ZpkZbbuAh3ve9ggYebG-2" value="" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#FF3333;" vertex="1" parent="1">
+          <mxGeometry x="110" y="610" width="630" height="320" as="geometry" />
+        </mxCell>
+        <mxCell id="-ZpkZbbuAh3ve9ggYebG-3" value="" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#33FF33;" vertex="1" parent="1">
+          <mxGeometry x="230" y="360" width="350" height="190" as="geometry" />
+        </mxCell>
+        <mxCell id="-ZpkZbbuAh3ve9ggYebG-4" value="Trusted Server" style="text;html=1;strokeColor=#82b366;fillColor=#d5e8d4;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;" vertex="1" parent="1">
+          <mxGeometry x="347.5" y="380" width="115" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="-ZpkZbbuAh3ve9ggYebG-43" value="certify" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="-ZpkZbbuAh3ve9ggYebG-6" target="-ZpkZbbuAh3ve9ggYebG-17">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="-ZpkZbbuAh3ve9ggYebG-6" value="Root PKI Server" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="270" y="450" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="-ZpkZbbuAh3ve9ggYebG-42" value="verify" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="-ZpkZbbuAh3ve9ggYebG-9" target="-ZpkZbbuAh3ve9ggYebG-14">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="-ZpkZbbuAh3ve9ggYebG-9" value="Remote Attestation Server" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="430" y="450" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="-ZpkZbbuAh3ve9ggYebG-10" value="Untrusted Cloud" style="text;html=1;strokeColor=#b85450;fillColor=#f8cecc;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;" vertex="1" parent="1">
+          <mxGeometry x="120" y="620" width="100" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="-ZpkZbbuAh3ve9ggYebG-11" value="verify" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.75;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="-ZpkZbbuAh3ve9ggYebG-14" target="-ZpkZbbuAh3ve9ggYebG-17">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="-ZpkZbbuAh3ve9ggYebG-12" value="verify" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;" edge="1" parent="1" source="-ZpkZbbuAh3ve9ggYebG-14" target="-ZpkZbbuAh3ve9ggYebG-18">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="-ZpkZbbuAh3ve9ggYebG-14" value="Marblerun Coordinator" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="430" y="660" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="-ZpkZbbuAh3ve9ggYebG-15" value="certify" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;" edge="1" parent="1" source="-ZpkZbbuAh3ve9ggYebG-17" target="-ZpkZbbuAh3ve9ggYebG-18">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="-ZpkZbbuAh3ve9ggYebG-17" value="PKI Server" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="270" y="810" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="-ZpkZbbuAh3ve9ggYebG-18" value="Anwendungen" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="430" y="810" width="120" height="60" as="geometry" />
+        </mxCell>
       </root>
     </mxGraphModel>
   </diagram>
