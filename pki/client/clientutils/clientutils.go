@@ -19,16 +19,22 @@ import (
 	"github.com/golang-jwt/jwt"
 )
 
-func GetCertificate() {
-	// placeholder
-	appID := "asd123"
+func GetCertificate(keyPath string, tokenPath string, certPath string, appID string, initialContact bool) {
+	// keyPath  : the path where the private Key of the client is stored
+	// tokenPath: the path where the workload identity token(jwt) should be stored
+	// certPath : the path where the marblerun certificate for the initial
+	//            mtls connection is stored
+	// initialContact : the marblerun Certificate gets used in the initial contact for
+	//                  authentication and the old Workload Identity Token afterwards
+	//                  Make sure to request a new Workload Identity Token BEFORE the old
+	//                  expires
 	nonceToken := GetChallenge()
 	challenge := string(nonceToken)
 
 	fmt.Println("Request Token")
 
 	fingerprint := challenge + appID
-	privateKey, err := LoadPrivateKeyFromFile("/secrets/private.key")
+	privateKey, err := LoadPrivateKeyFromFile(keyPath)
 	if err != nil {
 		fmt.Println("Error loading private key", err)
 	}
@@ -58,7 +64,7 @@ func GetCertificate() {
 	fmt.Println(string(body))
 
 	jwtResponse := string(body)
-	filePath := "/secrets/client.jwt"
+	filePath := tokenPath
 
 	err = os.WriteFile(filePath, []byte(jwtResponse), 0644)
 	if err != nil {

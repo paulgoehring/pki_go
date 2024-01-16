@@ -34,6 +34,8 @@ var challenges map[string]ChallengeObject
 var tableAppIDs map[string]string
 
 type ChallengeObject struct {
+	// bla bla bla URL not needed
+	//
 	ID         string
 	URL        string
 	NonceToken string

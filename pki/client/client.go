@@ -16,6 +16,7 @@ func main() {
 }
 
 func init() {
-	myutils.CreateKeyPair("/secrets/private.key")
-	client.GetCertificate()
+	myutils.CreateKeyPair("private.key")
+	client.GetCertificate("private.key", "client.jwt", "client_marble.crt", "test123", true)
+	client.GetCertificate("private.key", "client.jwt", "client_marble.crt", "test123", false)
 }

@@ -9,6 +9,19 @@
  */
 package main
 
+/*
+Marblerun Manifest data which the app Needs:
+"Env": {
+	"MARBLE_ROOT_CA": "{{ pem .MarbleRun.RootCA.Cert }}",
+	"MARBLE_CERT": "{{ pem .MarbleRun.MarbleCert.Cert }}",
+	"MARBLE_KEY": "{{ pem .MarbleRun.MarbleCert.Private }}",
+	"PKI_ROOT_CA": paste root cert here,
+	"Layer": "0"     //acces via os.Getenv("Layer") etc
+}
+}
+
+*/
+
 import (
 	"log"
 	"net/http"
