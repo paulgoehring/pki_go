@@ -32,6 +32,8 @@ import (
 var rootIp string    //= "http://localhost"
 var rootPort string  //= "8080"
 var selfAppId string //= "asd123"
+var PathJWT string = "PKISJWT.jwt"
+var PathCert string = "PKISCert.crt"
 
 // everything which is a global variable and can be changed
 // should be accesseed via env parameter and can be defined
@@ -71,6 +73,8 @@ func Initialize() {
 	// get certificate from root pkis
 	// same as in client
 	go GetCertificate()
+	// check if Cert expires, before renew cert
+	// go renewCertificate()
 }
 
 func GetChallengeGet(w http.ResponseWriter, r *http.Request) {
@@ -209,7 +213,47 @@ func GetCertificate() {
 
 	fmt.Println("Response: ")
 	fmt.Println(string(body))
+	// verify jwt
+	// store jwt
+	err = os.WriteFile(PathJWT, body, 0644)
+	if err != nil {
+		fmt.Println("Error Writing JWT", err)
+	}
 
+	jwtToken := string(body)
+
+	token, _, err := new(jwt.Parser).ParseUnverified(jwtToken, jwt.MapClaims{})
+	if err != nil {
+		fmt.Println("Error parsing JWT:", err)
+		return
+	}
+
+	x5c, ok := token.Header["x5c"]
+	if !ok {
+		fmt.Println("No x5c field in Header")
+		return
+	}
+
+	firstX5C := ""
+	if x5cArray, isArray := x5c.([]interface{}); isArray && len(x5cArray) > 0 {
+		if firstElement, isString := x5cArray[0].(string); isString {
+			firstX5C = firstElement
+		}
+	}
+
+	firstx5cPEM, err := base64.RawURLEncoding.DecodeString(firstX5C)
+	if err != nil {
+		fmt.Println("Error decoding x5c", err)
+		return
+	}
+	certFile, err := os.Create(PathCert)
+	defer certFile.Close()
+	_, err = certFile.Write(firstx5cPEM)
+
+}
+
+var response struct {
+	JWT string `json:"jwt"`
 }
 
 func VerifySignature(token, signature string, publicKey *rsa.PublicKey) (bool, error) {

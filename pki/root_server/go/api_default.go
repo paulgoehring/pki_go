@@ -467,8 +467,8 @@ func CreateJwt(privKey *rsa.PrivateKey, frontEndID string,
 		"sub": frontEndID,
 		"iss": "server",
 		"kid": GenerateKIDFromPublicKey(&privKey.PublicKey),
-		"iat": iat.Unix(), // maybe without Unix?
-		"exp": expiration.Unix(),
+		"iat": iat.Unix(),        // maybe without Unix?
+		"exp": expiration.Unix(), // maybe without unix
 		"jwk": myClaims,
 	}
 	header := jwt.MapClaims{
@@ -531,6 +531,7 @@ func VerifySignature(token, signature string, publicKey *rsa.PublicKey) (bool, e
 	return true, nil // Verification successful
 }
 
+/*
 func ServerCreateJwt(privKey *rsa.PrivateKey, frontEndID string, publicKey *rsa.PublicKey) string {
 	// add Certchain and certificate in header? check which create JWT is needed
 	myClaims := myJWKClaims{
@@ -555,6 +556,7 @@ func ServerCreateJwt(privKey *rsa.PrivateKey, frontEndID string, publicKey *rsa.
 	}
 	return tokenString
 }
+*/
 
 func GenerateNonce() string {
 	// TODO check if in nonce map
