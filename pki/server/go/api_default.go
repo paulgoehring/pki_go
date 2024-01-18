@@ -33,6 +33,10 @@ var rootIp string    //= "http://localhost"
 var rootPort string  //= "8080"
 var selfAppId string //= "asd123"
 
+// everything which is a global variable and can be changed
+// should be accesseed via env parameter and can be defined
+// in the manifest
+
 // maybe add expire date for challenge
 var challenges map[string]ChallengeObject
 
@@ -77,12 +81,13 @@ func GetChallengeGet(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("Got Challenge Request")
 
 	frontendAppID := r.URL.Query().Get("appID")
-	backendAppID := tableAppIDs[frontendAppID]
+	//backendAppID := tableAppIDs[frontendAppID]
 
 	nonce := GenerateNonce()
 	if frontendAppID != "" {
 		newRequest := ChallengeObject{
-			ID:         backendAppID,
+			ID: frontendAppID,
+			//ID:         backendAppID,
 			NonceToken: nonce,
 		}
 		//fmt.Println(newRequest.ID, newRequest.URL, newRequest.NonceToken)
@@ -98,6 +103,7 @@ func GetChallengeGet(w http.ResponseWriter, r *http.Request) {
 }
 
 func GetTokenGet(w http.ResponseWriter, r *http.Request) {
+	// wrap in correct tls method, check for root stuff
 	if r.Method != http.MethodGet {
 		http.Error(w, "No valid Method", http.StatusMethodNotAllowed)
 		return
