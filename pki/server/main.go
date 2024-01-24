@@ -43,8 +43,20 @@ func main() {
 
 	server.Initialize()
 
+	server1 := http.Server{
+		Addr:      ":8081",
+		TLSConfig: server.DefineTLSConfig(),
+	}
+
+	server2 := http.Server{
+		Addr: ":8081",
+	}
+
 	router := server.NewRouter()
+	server1.Handler = router
+	server2.Handler = router
 
 	// for testing root:8080, server: 443, client:80
-	log.Fatal(http.ListenAndServe(":8081", router))
+	go log.Fatal(server1.ListenAndServeTLS("", ""))
+	go log.Fatal(server2.ListenAndServe())
 }

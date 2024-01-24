@@ -75,4 +75,10 @@ var routes = Routes{
 		"/getCert",
 		GetTokenGet,
 	},
+	Route{
+		"GetNewTokenGet",
+		strings.ToUpper("Get"),
+		"/getNewCert",
+		GetNewTokenGet,
+	},
 }

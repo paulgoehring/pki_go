@@ -14,7 +14,9 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/tls"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/pem"
@@ -29,11 +31,19 @@ import (
 	"github.com/golang-jwt/jwt"
 )
 
+// var PublicKeys []PublicKeyInfo
 var rootIp string    //= "http://localhost"
 var rootPort string  //= "8080"
 var selfAppId string //= "asd123"
 var PathJWT string = "PKISJWT.jwt"
-var PathCert string = "PKISCert.crt"
+var PathOwnCrt string = "PKISCert.crt"
+var PathOwnKey string = "private.key"
+var PathRootCrt string = "root.crt"
+var PathMarbleRootCrt string = "marblerunCA.crt"
+var PathMarbleOwnCrt string = "marbleServerCert.crt"
+var PathMarblePrivateKey string = "marbleServer.key"
+var SerialNumber = big.NewInt(0)
+var PemCertChain []string
 
 // everything which is a global variable and can be changed
 // should be accesseed via env parameter and can be defined
@@ -54,14 +64,28 @@ type myJWKClaims struct {
 	Modulus   string `json:"n"`
 }
 
+type KeyResponse struct {
+	Keys []PublicKeyInfo `json:"keys"`
+}
+
 type ChallengeObject struct {
 	ID         string
 	NonceToken string
 }
 
+type PublicKeyInfo struct {
+	E   string    `json:"e"`
+	Kid string    `json:"kid"`
+	N   string    `json:"n"`
+	Use string    `json:"use"`
+	Kty string    `json:"kty"`
+	Alg string    `json:"alg"`
+	Exp time.Time `json:"exp"`
+}
+
 func Initialize() {
 	// create key pair
-	rootIp = "http://localhost"
+	rootIp = "https://localhost"
 	rootPort = "8080"
 	selfAppId = "asd123"
 	CreateKeyPair("private.key")
@@ -72,9 +96,12 @@ func Initialize() {
 
 	// get certificate from root pkis
 	// same as in client
-	go GetCertificate()
+	GetCertificate(false, false)
 	// check if Cert expires, before renew cert
 	// go renewCertificate()
+
+	// remove and add new certs whenever renew called
+	PemCertChain = append(PemCertChain, base64.StdEncoding.EncodeToString([]byte(PathOwnCrt)))
 }
 
 func GetChallengeGet(w http.ResponseWriter, r *http.Request) {
@@ -168,7 +195,11 @@ func GetTokenGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	newJwt := CreateJwt(privateKey, frontendAppID, recreatePubKey)
+	newCert := base64.StdEncoding.EncodeToString(CreateCert(SerialNumber, recreatePubKey, PathOwnCrt, PathOwnKey,
+		frontendAppID, 1, "client")) // here check which layer mb
+
+	fmt.Println(newCert)
+	newJwt := CreateJwt(privateKey, frontendAppID, recreatePubKey, newCert, PemCertChain)
 
 	w.Header().Set("Content-Type", "application/json")
 	fmt.Fprint(w, newJwt)
@@ -176,7 +207,89 @@ func GetTokenGet(w http.ResponseWriter, r *http.Request) {
 	// Now give back jwt signed by server as response, validate at rpki endpoint at the end
 }
 
-func GetCertificate() {
+func CreateCert(SerialNumber *big.Int, pubKey *rsa.PublicKey, signingCertPath string,
+	signingKeyPath string, issuedName string, validHours int, certType string) []byte {
+
+	certTemplate := Generatex509Template(SerialNumber, issuedName, validHours, certType)
+	var signingCert *x509.Certificate
+	var certDER []byte
+	signingKey, err := LoadPrivateKeyFromFile(signingKeyPath)
+	if err != nil {
+		fmt.Println("Error loading Private Key")
+	}
+	if signingCertPath != "" {
+		signingCertPEM, err := os.ReadFile(signingCertPath)
+		if err != nil {
+			fmt.Println("Error loading signing Certificate")
+		}
+		signingCert, err = parseCertificatePEM(signingCertPEM)
+		if err != nil {
+			fmt.Println("Error parsing signing Certificate PEM")
+		}
+		certDER, err = x509.CreateCertificate(rand.Reader, &certTemplate, signingCert,
+			pubKey, signingKey)
+	} else {
+		certDER, err = x509.CreateCertificate(rand.Reader, &certTemplate, &certTemplate,
+			pubKey, signingKey)
+	}
+
+	SerialNumber.Add(SerialNumber, big.NewInt(1))
+	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
+}
+
+func parseCertificatePEM(certPEM []byte) (*x509.Certificate, error) {
+	block, _ := pem.Decode(certPEM)
+	if block == nil || block.Type != "CERTIFICATE" {
+		return nil, fmt.Errorf("failed to decode PEM block containing certificate")
+	}
+
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing certificate: %v", err)
+	}
+
+	return cert, nil
+}
+
+func Generatex509Template(serialNumber *big.Int, subjectName string, validHours int, certType string) x509.Certificate {
+	if certType == "root" {
+		certTemplate := x509.Certificate{
+			SerialNumber: serialNumber,
+			Subject:      pkix.Name{Organization: []string{subjectName}},
+			NotBefore:    time.Now(),
+			NotAfter:     time.Now().Add(time.Duration(validHours) * time.Hour), // Valid for 10 years
+
+			// do i need key usage fields ?
+			KeyUsage:    x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
+			ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},
+			IsCA:        true,
+		}
+		return certTemplate
+	} else if certType == "intermediate" {
+		certTemplate := x509.Certificate{
+			SerialNumber: serialNumber,
+			Subject:      pkix.Name{Organization: []string{subjectName}},
+			NotBefore:    time.Now(),
+			NotAfter:     time.Now().Add(time.Duration(validHours) * time.Hour), // Valid for 10 years
+
+			// do i need key usage fields ?
+			KeyUsage:    x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
+			ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},
+			//IsCA:        isCA,
+		}
+		return certTemplate
+	} else {
+		certTemplate := x509.Certificate{
+			SerialNumber: serialNumber,
+			Subject:      pkix.Name{Organization: []string{subjectName}},
+			NotBefore:    time.Now(),
+			NotAfter:     time.Now().Add(time.Duration(validHours) * time.Hour), // Valid for 10 years
+		}
+		return certTemplate
+	}
+}
+
+func GetCertificate(renew bool, newPubKey bool) {
 	// placeholder
 	appID := "asd123"
 	nonceToken := GetChallenge()
@@ -201,9 +314,14 @@ func GetCertificate() {
 	}
 	fmt.Println(newJwt)
 
-	req, err := http.NewRequest("GET", "http://localhost:8080/getCert", nil)
+	client := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: DefineClientTLSConfig2(),
+		},
+	}
+	req, err := http.NewRequest("GET", "https://localhost:8080/getCert", nil)
 	req.Header.Set("Authorization", "Bearer "+newJwt)
-	client := &http.Client{}
+
 	resp, err := client.Do(req)
 	if err != nil {
 		return
@@ -246,7 +364,7 @@ func GetCertificate() {
 		fmt.Println("Error decoding x5c", err)
 		return
 	}
-	certFile, err := os.Create(PathCert)
+	certFile, err := os.Create(PathOwnCrt)
 	defer certFile.Close()
 	_, err = certFile.Write(firstx5cPEM)
 
@@ -277,7 +395,12 @@ func GenerateKIDFromPublicKey(publicKey *rsa.PublicKey) string {
 	return kid
 }
 
-func CreateJwt(privKey *rsa.PrivateKey, frontEndID string, publicKey *rsa.PublicKey) string {
+func CreateJwt(privKey *rsa.PrivateKey, frontEndID string, publicKey *rsa.PublicKey, issuedCert string,
+	certChain []string) string {
+	x5cField := append([]string{issuedCert}, certChain...)
+
+	iat := time.Now()
+	expiration := iat.Add(time.Hour * 1)
 	myClaims := myJWKClaims{
 		KeyType:   "RSA",
 		Usage:     "sig",
@@ -290,10 +413,18 @@ func CreateJwt(privKey *rsa.PrivateKey, frontEndID string, publicKey *rsa.Public
 		"sub": frontEndID,
 		"iss": "server",
 		"kid": GenerateKIDFromPublicKey(&privKey.PublicKey),
-		"exp": time.Now().Add(time.Hour * 1).Unix(),
+		"iat": iat.Unix(),        // maybe without Unix?
+		"exp": expiration.Unix(), // maybe without unix
 		"jwk": myClaims,
 	}
+	header := jwt.MapClaims{
+		"alg": "RS256",
+		"typ": "JWT",
+		"x5c": x5cField, // certificate Chain to validate jwt and if certificate needed
+	}
+
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+	token.Header = header
 	tokenString, err := token.SignedString(privKey)
 	if err != nil {
 		return ""
@@ -387,7 +518,13 @@ func SignToken(token string, privateKey *rsa.PrivateKey) (string, error) {
 }
 
 func GetChallenge() []byte {
-	request1, err := http.Get(fmt.Sprintf("%v:%v/getChallenge?appID=%v", rootIp, rootPort, selfAppId))
+	client := http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: DefineClientTLSConfig2(),
+		},
+	}
+	//url := fmt.Sprintf("%v:%v/getChallenge?appID=%v", rootIp, rootPort, selfAppId)
+	request1, err := client.Get(fmt.Sprintf("%v:%v/getChallenge?appID=%v", rootIp, rootPort, selfAppId))
 	if err != nil {
 		fmt.Println("Could not reach Server", err)
 		return nil
@@ -397,4 +534,109 @@ func GetChallenge() []byte {
 	nonceToken, err := io.ReadAll(request1.Body)
 	fmt.Println(fmt.Sprintf("Got Challenge: %v", string(nonceToken)))
 	return nonceToken
+}
+
+func DefineTLSConfig() *tls.Config {
+	var tlsConfig *tls.Config
+
+	ownCert, err := tls.LoadX509KeyPair(PathOwnCrt, PathOwnKey)
+	if err != nil {
+		fmt.Println("Error Loading Server cert", err)
+		return nil
+	}
+
+	//caCert, err := os.ReadFile(PathRootCrt)
+	// for Root PKI Same
+	//if err != nil {
+	//	fmt.Println("Error loading CA certificate:", err)
+	//	return nil
+	//}
+
+	marbleCert, err := os.ReadFile(PathMarbleRootCrt)
+	if err != nil {
+		fmt.Println("Error loading marble root certificate:", err)
+		return nil
+	}
+
+	certPool := x509.NewCertPool()
+	//certPool.AppendCertsFromPEM(caCert)
+	certPool.AppendCertsFromPEM(marbleCert)
+
+	tlsConfig = &tls.Config{
+		Certificates: []tls.Certificate{ownCert},
+		ClientAuth:   tls.RequireAndVerifyClientCert,
+		ClientCAs:    certPool,
+		VerifyPeerCertificate: func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
+			// Perform additional checks on the client certificate
+			for _, chain := range verifiedChains {
+				for _, cert := range chain {
+					// Check if the "iat" field is not older than 5 minutes ago
+					iat := cert.NotBefore
+					maxAge := 10000 * time.Minute //change later
+
+					// Perform the additional check only if one of the specified root CAs is used
+					//if cert.Issuer.CommonName == "Marblerun Coordinator" {
+					if time.Since(iat) > maxAge {
+						return fmt.Errorf("client certificate is too old (issued more than 5 minutes ago)")
+					}
+					//}
+				}
+			}
+			return nil
+		},
+	}
+	return tlsConfig
+
+}
+
+func DefineClientTLSConfig2() *tls.Config {
+	var tlsConfig *tls.Config
+
+	ownCert, err := tls.LoadX509KeyPair(PathMarbleOwnCrt, PathMarblePrivateKey)
+	if err != nil {
+		fmt.Println("Error Loading Server cert", err)
+		return nil
+	}
+
+	tlsConfig = &tls.Config{
+		Certificates:       []tls.Certificate{ownCert},
+		InsecureSkipVerify: true,
+	}
+
+	return tlsConfig
+
+}
+
+func GetNewTokenGet(w http.ResponseWriter, r *http.Request) {
+	// TODO: add query parameter new PubKey
+	// check if appID in marble cert valid
+	// app ID not needed, since coordinator just gives certificates to valid apps
+	if r.Method != http.MethodGet {
+		http.Error(w, "No valid Method", http.StatusMethodNotAllowed)
+		return
+	}
+	fmt.Println("Got Challenge Request")
+
+	frontendAppID := r.URL.Query().Get("appID")
+	// backendAppID := tableAppIDs[frontendAppID]
+
+	nonce := GenerateNonce()
+	if frontendAppID != "" {
+		// maybe check here for valid appid and just give challenges for valid ones
+		// check if valid in marblerun x509, better
+		newRequest := ChallengeObject{
+			// ID: backendAppID,
+			ID:         frontendAppID,
+			NonceToken: nonce,
+		}
+		//fmt.Println(newRequest.ID, newRequest.URL, newRequest.NonceToken)
+		challenges[frontendAppID] = newRequest
+	} else {
+		fmt.Println("value for AppID missing")
+		nonce = "Value for AppID missing"
+	}
+	fmt.Println(fmt.Sprintf("Sent challenge: %v", nonce))
+
+	w.Header().Set("Content-Type", "text/plain")
+	fmt.Fprint(w, nonce)
 }

@@ -14,6 +14,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/base64"
@@ -211,6 +212,7 @@ func WellKnownCertsGet(w http.ResponseWriter, r *http.Request) {
 }
 
 func GetChallengeGet(w http.ResponseWriter, r *http.Request) {
+	// TODO: add query parameter new PubKey
 	// check if appID in marble cert valid
 	// app ID not needed, since coordinator just gives certificates to valid apps
 	if r.Method != http.MethodGet {
@@ -568,4 +570,130 @@ func GenerateNonce() string {
 	nonce := base64.StdEncoding.EncodeToString(nonceBytes)
 	//fmt.Println(nonce)
 	return nonce
+}
+
+/*
+func ApplyMTLSConfig(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var tlsConfig *tls.Config
+
+		ownCert, err := tls.LoadX509KeyPair(PathOwnCrt, PathServerKey)
+		if err != nil {
+			fmt.Println("Error Loading Server cert", err)
+			return
+		}
+
+		caCert, err := os.ReadFile(PathRootCrt)
+		// for Root PKI Same
+		if err != nil {
+			fmt.Println("Error loading CA certificate:", err)
+			return
+		}
+
+		marbleCert, err := os.ReadFile(PathMarbleRootCrt)
+		if err != nil {
+			fmt.Println("Error loading marble root certificate:", err)
+			return
+		}
+
+		caCertPool := x509.NewCertPool()
+		caCertPool.AppendCertsFromPEM(caCert)
+
+		marbleCaCertPool := x509.NewCertPool()
+		marbleCaCertPool.AppendCertsFromPEM(marbleCert)
+
+		// Check if the "renew" query parameter is present
+		if r.URL.Query().Get("renew") == "true" {
+			// Apply a custom mTLS configuration for renewal
+			fmt.Println("Applying custom mTLS configuration for renewal")
+			// Configure TLS for renewal...
+			tlsConfig = &tls.Config{
+				Certificates: []tls.Certificate{ownCert},
+				ClientAuth: tls.RequireAndVerifyClientCert,
+				ClientCAs: caCertPool,
+			}
+		} else {
+			// Apply the default mTLS configuration
+			fmt.Println("Applying default mTLS configuration")
+			// Configure default TLS...
+			tlsConfig = &tls.Config{
+				Certificates: []tls.Certificate{ownCert},
+				ClientAuth:   tls.RequireAndVerifyClientCert,
+				ClientCAs:    marbleCaCertPool,
+				VerifyPeerCertificate: func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
+					// Perform additional checks on the client certificate
+					for _, chain := range verifiedChains {
+						for _, cert := range chain {
+							// Check if the "iat" field is not older than 5 minutes ago
+							iat := cert.NotBefore
+							maxAge := 5 * time.Minute
+							if time.Since(iat) > maxAge {
+								return fmt.Errorf("client certificate is too old (issued more than 5 minutes ago)")
+							}
+						}
+					}
+					return nil
+				},
+			}
+
+		}
+		r.TLSConfig = tlsConfig
+
+		// Call the next handler in the chain
+		next.ServeHTTP(w, r)
+	})
+
+} */
+
+func DefineTLSConfig() *tls.Config {
+	var tlsConfig *tls.Config
+
+	ownCert, err := tls.LoadX509KeyPair(PathOwnCrt, PathServerKey)
+	if err != nil {
+		fmt.Println("Error Loading Server cert", err)
+		return nil
+	}
+
+	caCert, err := os.ReadFile(PathRootCrt)
+	// for Root PKI Same
+	if err != nil {
+		fmt.Println("Error loading CA certificate:", err)
+		return nil
+	}
+
+	marbleCert, err := os.ReadFile(PathMarbleRootCrt)
+	if err != nil {
+		fmt.Println("Error loading marble root certificate:", err)
+		return nil
+	}
+
+	certPool := x509.NewCertPool()
+	certPool.AppendCertsFromPEM(caCert)
+	certPool.AppendCertsFromPEM(marbleCert)
+
+	tlsConfig = &tls.Config{
+		Certificates: []tls.Certificate{ownCert},
+		ClientAuth:   tls.RequireAndVerifyClientCert,
+		ClientCAs:    certPool,
+		VerifyPeerCertificate: func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
+			// Perform additional checks on the client certificate
+			for _, chain := range verifiedChains {
+				for _, cert := range chain {
+					// Check if the "iat" field is not older than 5 minutes ago
+					iat := cert.NotBefore
+					maxAge := 10000 * time.Minute // change to 5 later
+
+					// Perform the additional check only if one of the specified root CAs is used
+					//if cert.Issuer.CommonName == "Marblerun Coordinator" {
+					if time.Since(iat) > maxAge {
+						return fmt.Errorf("client certificate is too old (issued more than 5 minutes ago)")
+					}
+					//}
+				}
+			}
+			return nil
+		},
+	}
+	return tlsConfig
+
 }

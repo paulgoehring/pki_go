@@ -29,8 +29,20 @@ func main() {
 	log.Printf("Init Root Server")
 
 	root.Initialize()
+	server := http.Server{
+		Addr:      ":8080",
+		TLSConfig: root.DefineTLSConfig(),
+	}
+	server2 := http.Server{
+		Addr: ":8443",
+	}
 
 	router := root.NewRouter()
+	server.Handler = router
+	server2.Handler = router
 
-	log.Fatal(http.ListenAndServe(":8080", router))
+	go func() {
+		log.Fatal(server.ListenAndServeTLS("", ""))
+	}()
+	log.Fatal(server2.ListenAndServe())
 }

@@ -31,6 +31,10 @@ func NewRouter() *mux.Router {
 	for _, route := range routes {
 		var handler http.Handler
 		handler = route.HandlerFunc
+
+		//if route.Name == "GetTokenGet" {
+		//	handler = ApplyMTLSConfig(handler)
+		//}
 		handler = Logger(handler, route.Name)
 
 		router.
