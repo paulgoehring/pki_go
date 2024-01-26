@@ -87,4 +87,16 @@ var routes = Routes{
 		"/.well-known/certs",
 		WellKnownCertsGet,
 	},
+	Route{
+		"GetNewChallengeGet",
+		strings.ToUpper("Get"),
+		"/getNewChallenge",
+		GetNewChallengeGet,
+	},
+	Route{
+		"GetNewTokenGet",
+		strings.ToUpper("Get"),
+		"/getNewCert",
+		GetNewTokenGet,
+	},
 }

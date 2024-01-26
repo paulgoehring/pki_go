@@ -9,6 +9,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"io"
@@ -160,6 +161,33 @@ func createJwt(privKey *rsa.PrivateKey, fingerprint string, frontEndID string) (
 	return tokenString, nil
 }
 
+func createNewJwt(oldICT []byte, privKey *rsa.PrivateKey, fingerprintOld string, fingerprintNew string,
+	frontEndID string) (string, error) {
+	myClaims := myJWKClaims{
+		KeyType:   "RSA",
+		Usage:     "sig",
+		KeyID:     GenerateKIDFromPublicKey(&privKey.PublicKey),
+		Algorithm: "RS256",
+		Exponent:  strconv.Itoa(privKey.PublicKey.E),
+		Modulus:   privKey.PublicKey.N.String(),
+	}
+	claims := jwt.MapClaims{
+		"sub":               frontEndID,
+		"iss":               "client",
+		"fingerprintoldkey": fingerprintOld,
+		"fingerprintnewkey": fingerprintNew,
+		"exp":               time.Now().Add(time.Hour * 1).Unix(),
+		"jwk":               myClaims,
+		"ict":               string(oldICT),
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+	tokenString, err := token.SignedString(privKey)
+	if err != nil {
+		return "", err
+	}
+	return tokenString, nil
+}
+
 func GetChallenge(tlsConfiguration *tls.Config) []byte {
 	client := http.Client{
 		Transport: &http.Transport{
@@ -211,11 +239,128 @@ func DefineClientTLSConfig(pathCrt string, pathKey string) *tls.Config {
 
 }
 
-func RenewCertificate(pathJwt string, pathKey string, newKey bool) {
+func VerifySignature(token, signature string, publicKey *rsa.PublicKey) (bool, error) {
+	decodedSignature, err := base64.StdEncoding.DecodeString(signature)
+	if err != nil {
+		return false, err
+	}
+
+	hashed := sha256.Sum256([]byte(token))
+	err = rsa.VerifyPKCS1v15(publicKey, crypto.SHA256, hashed[:], decodedSignature)
+	if err != nil {
+		return false, nil // Verification failed
+	}
+	fmt.Println(token, signature, decodedSignature, hashed)
+	return true, nil // Verification successful
+}
+
+func RenewCertificate(pathJwt string, certPath string, pathKey string, newKey bool, appID string) {
 	// get new challenge
 	// if new key then you need two proof of possession
 	// formulate new jwt, including old jwt
 
+	nonceOldKey, nonceNewKey := GetNewChallenge()
+
+	fmt.Println("Request Token")
+
+	oldICT, err := os.ReadFile(pathJwt)
+
+	fingerprintOld := nonceOldKey + appID
+	fingerprintNew := nonceNewKey + appID
+	privateKeyOld, err := LoadPrivateKeyFromFile(pathKey)
+	if err != nil {
+		fmt.Println("Error loading private key", err)
+	}
+
+	privateKeyNew := privateKeyOld // create Key Pair if new one requested
+
+	signedTokenOld, err := SignToken(fingerprintOld, privateKeyOld)
+	if err != nil {
+		fmt.Println("Error signing old token", err)
+	}
+
+	signedTokenNew, err := SignToken(fingerprintNew, privateKeyNew)
+	if err != nil {
+		fmt.Println("Error signing new token", err)
+	}
+
+	newJwt, err := createNewJwt(oldICT, privateKeyNew, signedTokenOld, signedTokenNew, appID)
+	if err != nil {
+		fmt.Println("Error creating JWT token", err)
+	}
+
+	client := &http.Client{
+		Transport: &http.Transport{},
+	}
+	req, err := http.NewRequest("GET", "http://localhost:8082/getNewCert", nil)
+	req.Header.Set("Authorization", "Bearer "+newJwt)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+
+	fmt.Println("Response: ")
+	fmt.Println(string(body))
+
+	jwtResponse := string(body)
+
+	err = os.WriteFile(pathJwt, body, 0644)
+	if err != nil {
+		fmt.Println("JWT could not be stored", err)
+	}
+
+	token, _, err := new(jwt.Parser).ParseUnverified(jwtResponse, jwt.MapClaims{})
+	if err != nil {
+		fmt.Println("Error parsing JWT:", err)
+		return
+	}
+
+	x5c, ok := token.Header["x5c"]
+	if !ok {
+		fmt.Println("No x5c field in Header")
+		return
+	}
+
+	firstX5C := ""
+	if x5cArray, isArray := x5c.([]interface{}); isArray && len(x5cArray) > 0 {
+		if firstElement, isString := x5cArray[0].(string); isString {
+			firstX5C = firstElement
+		}
+	}
+
+	firstx5cPEM, err := base64.StdEncoding.DecodeString(firstX5C)
+	if err != nil {
+		fmt.Println("Error decoding x5c", err)
+		return
+	}
+	certFile, err := os.Create(certPath)
+	defer certFile.Close()
+	_, err = certFile.Write(firstx5cPEM)
+
+}
+
+func GetNewChallenge() (string, string) {
+
+	// TODO Correct IP and port
+	request1, err := http.Get(fmt.Sprintf("http://localhost:8082/getNewChallenge?appID=%v", "asd123"))
+	if err != nil {
+		fmt.Println("Could not reach Server", err)
+		return "", ""
+	}
+	defer request1.Body.Close()
+
+	var data map[string]string
+	err = json.NewDecoder(request1.Body).Decode(&data)
+	if err != nil {
+		fmt.Println("Error decoding JSON response:", err)
+		return "", ""
+	}
+	nonceOldKey := data["nonceOldKey"]
+	nonceNewKey := data["nonceNewKey"]
+	return nonceOldKey, nonceNewKey
 }
 
 func VerifyJwt(pathJwt string, pathRootCert string) {
@@ -224,5 +369,6 @@ func VerifyJwt(pathJwt string, pathRootCert string) {
 	} else {
 		// get key pair from /well-known/ enpoint and verify token
 	}
+	return
 
 }

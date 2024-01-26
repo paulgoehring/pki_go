@@ -49,7 +49,7 @@ func main() {
 	}
 
 	server2 := http.Server{
-		Addr: ":8081",
+		Addr: ":8082",
 	}
 
 	router := server.NewRouter()
@@ -57,6 +57,8 @@ func main() {
 	server2.Handler = router
 
 	// for testing root:8080, server: 443, client:80
-	go log.Fatal(server1.ListenAndServeTLS("", ""))
-	go log.Fatal(server2.ListenAndServe())
+	go func() {
+		log.Fatal(server1.ListenAndServeTLS("", ""))
+	}()
+	log.Fatal(server2.ListenAndServe())
 }

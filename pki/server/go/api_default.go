@@ -19,6 +19,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"io"
@@ -52,6 +53,8 @@ var PemCertChain []string
 // maybe add expire date for challenge
 var challenges map[string]ChallengeObject
 
+var challengesRenew map[string]ChallengeObjectRenew
+
 // look up backend id, format is [frontendID]backendID
 var tableAppIDs map[string]string
 
@@ -73,6 +76,12 @@ type ChallengeObject struct {
 	NonceToken string
 }
 
+type ChallengeObjectRenew struct {
+	ID               string
+	NonceTokenOldKey string
+	NonceTokenNewKey string
+}
+
 type PublicKeyInfo struct {
 	E   string    `json:"e"`
 	Kid string    `json:"kid"`
@@ -90,6 +99,7 @@ func Initialize() {
 	selfAppId = "asd123"
 	CreateKeyPair("private.key")
 	challenges = make(map[string]ChallengeObject)
+	challengesRenew = make(map[string]ChallengeObjectRenew)
 	tableAppIDs = make(map[string]string)
 
 	tableAppIDs["asd123"] = "asd123"
@@ -102,6 +112,12 @@ func Initialize() {
 
 	// remove and add new certs whenever renew called
 	PemCertChain = append(PemCertChain, base64.StdEncoding.EncodeToString([]byte(PathOwnCrt)))
+	time.Sleep(5 * time.Second)
+
+	RenewCertificate(PathJWT, PathOwnCrt, PathOwnKey, false, "asd123")
+
+	PemCertChain = append(PemCertChain[1:], base64.StdEncoding.EncodeToString([]byte(PathOwnCrt)))
+
 }
 
 func GetChallengeGet(w http.ResponseWriter, r *http.Request) {
@@ -128,6 +144,51 @@ func GetChallengeGet(w http.ResponseWriter, r *http.Request) {
 		nonce = "Value for AppID missing"
 	}
 	fmt.Println(fmt.Sprintf("Sent challenge: %v", nonce))
+
+	w.Header().Set("Content-Type", "text/plain")
+	fmt.Fprint(w, nonce)
+}
+
+func GetNewChallengeGet(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "No valid Method", http.StatusMethodNotAllowed)
+		return
+	}
+	fmt.Println("Got Challenge Request")
+
+	frontendAppID := r.URL.Query().Get("appID")
+
+	nonce1 := GenerateNonce()
+	nonce2 := GenerateNonce()
+
+	if frontendAppID != "" {
+		newRequest := ChallengeObjectRenew{
+			ID:               frontendAppID,
+			NonceTokenOldKey: nonce1,
+			NonceTokenNewKey: nonce2,
+		}
+
+		challengesRenew[frontendAppID] = newRequest
+
+		// Respond with a JSON containing both nonces
+		response := map[string]string{
+			"nonceOldKey": nonce1,
+			"nonceNewKey": nonce2,
+		}
+
+		responseJSON, err := json.Marshal(response)
+		if err != nil {
+			http.Error(w, "Error encoding JSON response", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(responseJSON)
+		return
+	}
+
+	fmt.Println("value for AppID missing")
+	nonce := "Value for AppID missing"
 
 	w.Header().Set("Content-Type", "text/plain")
 	fmt.Fprint(w, nonce)
@@ -615,28 +676,249 @@ func GetNewTokenGet(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "No valid Method", http.StatusMethodNotAllowed)
 		return
 	}
-	fmt.Println("Got Challenge Request")
+	fmt.Println("Got Certification request")
 
-	frontendAppID := r.URL.Query().Get("appID")
-	// backendAppID := tableAppIDs[frontendAppID]
+	tokenString := r.Header.Get("Authorization")[7:]
 
-	nonce := GenerateNonce()
-	if frontendAppID != "" {
-		// maybe check here for valid appid and just give challenges for valid ones
-		// check if valid in marblerun x509, better
-		newRequest := ChallengeObject{
-			// ID: backendAppID,
-			ID:         frontendAppID,
-			NonceToken: nonce,
-		}
-		//fmt.Println(newRequest.ID, newRequest.URL, newRequest.NonceToken)
-		challenges[frontendAppID] = newRequest
-	} else {
-		fmt.Println("value for AppID missing")
-		nonce = "Value for AppID missing"
+	parsedToken, _ := jwt.Parse(tokenString, nil)
+
+	privateKey, err := LoadPrivateKeyFromFile("private.key")
+
+	claims, ok := parsedToken.Claims.(jwt.MapClaims)
+	if !ok {
+		// handle invalid claims ?
+		fmt.Println("Invalid JWT claims")
+		return
 	}
-	fmt.Println(fmt.Sprintf("Sent challenge: %v", nonce))
 
-	w.Header().Set("Content-Type", "text/plain")
-	fmt.Fprint(w, nonce)
+	oldIct, ok := claims["ict"].(string)
+	if !ok {
+		http.Error(w, "No ict found in request", http.StatusUnauthorized)
+		return
+	}
+
+	if !VerifyICT() {
+		fmt.Println("Unsuccessfull", err)
+		w.WriteHeader(http.StatusUnauthorized)
+		message := "Access Denied: You do not have permission to access this resource."
+		fmt.Fprintln(w, message)
+		return
+	}
+
+	parsedIct, err := jwt.Parse(oldIct, nil)
+
+	ictClaims, ok := parsedIct.Claims.(jwt.MapClaims)
+	if !ok {
+		fmt.Println("Invalid JWT claims")
+		return
+	}
+
+	fmt.Println("OldICT:   " + parsedIct.Raw)
+
+	oldPublicKeyData := ictClaims["jwk"].(map[string]interface{})
+	n1, _ := oldPublicKeyData["n"].(string)
+	e1, _ := oldPublicKeyData["e"].(string)
+
+	n2 := new(big.Int)
+	n2.SetString(n1, 10)
+
+	e2 := new(big.Int)
+	e2.SetString(e1, 10)
+
+	recreateOldPubKey := &rsa.PublicKey{
+		N: n2,
+		E: int(e2.Int64()),
+	}
+
+	newPublicKeyData := claims["jwk"].(map[string]interface{})
+	n11, _ := newPublicKeyData["n"].(string)
+	e11, _ := newPublicKeyData["e"].(string)
+	n22 := new(big.Int)
+	n22.SetString(n11, 10)
+
+	e22 := new(big.Int)
+	e22.SetString(e11, 10)
+
+	recreateNewPubKey := &rsa.PublicKey{
+		N: n22,
+		E: int(e22.Int64()),
+	}
+
+	signedOldFingerprint := claims["fingerprintoldkey"].(string)
+	signedNewFingerprint := claims["fingerprintnewkey"].(string)
+	frontendAppID := claims["sub"].(string)
+
+	oldFingerprintToVerify := challengesRenew[frontendAppID].NonceTokenOldKey + challenges[frontendAppID].ID
+	newFingerprintToVerify := challengesRenew[frontendAppID].NonceTokenNewKey + challenges[frontendAppID].ID
+
+	ver, err := VerifySignature(oldFingerprintToVerify, signedOldFingerprint, recreateOldPubKey)
+	if ver {
+		fmt.Println("Verification of old Key and ICT successfull")
+	} else {
+		fmt.Println("Unsuccessfull", err)
+		w.WriteHeader(http.StatusUnauthorized)
+		message := "Access Denied: You do not have permission to access this resource."
+		fmt.Fprintln(w, message)
+		return
+	}
+
+	ver, err = VerifySignature(newFingerprintToVerify, signedNewFingerprint, recreateNewPubKey)
+	if ver {
+		fmt.Println("Verification of new Key successfull")
+	} else {
+		fmt.Println("Unsuccessfull", err)
+		w.WriteHeader(http.StatusUnauthorized)
+		message := "Access Denied: You do not have permission to access this resource."
+		fmt.Fprintln(w, message)
+		return
+	}
+
+	newCert := base64.StdEncoding.EncodeToString(CreateCert(SerialNumber, recreateNewPubKey, PathOwnCrt, PathOwnKey,
+		frontendAppID, 1, "client"))
+
+	newJwt := CreateJwt(privateKey, frontendAppID, recreateNewPubKey, newCert, PemCertChain)
+
+	w.Header().Set("Content-Type", "application/json")
+	fmt.Fprint(w, newJwt)
+
+}
+
+func RenewCertificate(pathJwt string, certPath string, pathKey string, newKey bool, appID string) {
+	// get new challenge
+	// if new key then you need two proof of possession
+	// formulate new jwt, including old jwt
+
+	nonceOldKey, nonceNewKey := GetNewChallenge()
+
+	fmt.Println("Request Token")
+
+	oldICT, err := os.ReadFile(pathJwt)
+
+	fingerprintOld := nonceOldKey + appID
+	fingerprintNew := nonceNewKey + appID
+	privateKeyOld, err := LoadPrivateKeyFromFile(pathKey)
+	if err != nil {
+		fmt.Println("Error loading private key", err)
+	}
+
+	privateKeyNew := privateKeyOld // create Key Pair if new one requested
+
+	signedTokenOld, err := SignToken(fingerprintOld, privateKeyOld)
+	if err != nil {
+		fmt.Println("Error signing old token", err)
+	}
+
+	signedTokenNew, err := SignToken(fingerprintNew, privateKeyNew)
+	if err != nil {
+		fmt.Println("Error signing new token", err)
+	}
+
+	newJwt, err := createNewJwt(oldICT, privateKeyNew, signedTokenOld, signedTokenNew, appID)
+	if err != nil {
+		fmt.Println("Error creating JWT token", err)
+	}
+
+	client := &http.Client{
+		Transport: &http.Transport{},
+	}
+	req, err := http.NewRequest("GET", "http://localhost:8443/getNewCert", nil)
+	req.Header.Set("Authorization", "Bearer "+newJwt)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+
+	fmt.Println("Response: ")
+	fmt.Println(string(body))
+
+	jwtResponse := string(body)
+
+	err = os.WriteFile(pathJwt, body, 0644)
+	if err != nil {
+		fmt.Println("JWT could not be stored", err)
+	}
+
+	token, _, err := new(jwt.Parser).ParseUnverified(jwtResponse, jwt.MapClaims{})
+	if err != nil {
+		fmt.Println("Error parsing JWT:", err)
+		return
+	}
+
+	x5c, ok := token.Header["x5c"]
+	if !ok {
+		fmt.Println("No x5c field in Header")
+		return
+	}
+
+	firstX5C := ""
+	if x5cArray, isArray := x5c.([]interface{}); isArray && len(x5cArray) > 0 {
+		if firstElement, isString := x5cArray[0].(string); isString {
+			firstX5C = firstElement
+		}
+	}
+
+	firstx5cPEM, err := base64.StdEncoding.DecodeString(firstX5C)
+	if err != nil {
+		fmt.Println("Error decoding x5c", err)
+		return
+	}
+	certFile, err := os.Create(certPath)
+	defer certFile.Close()
+	_, err = certFile.Write(firstx5cPEM)
+
+}
+
+func GetNewChallenge() (string, string) {
+
+	// TODO Correct IP and port
+	request1, err := http.Get(fmt.Sprintf("http://localhost:8443/getNewChallenge?appID=%v", "asd123"))
+	if err != nil {
+		fmt.Println("Could not reach Server", err)
+		return "", ""
+	}
+	defer request1.Body.Close()
+
+	var data map[string]string
+	err = json.NewDecoder(request1.Body).Decode(&data)
+	if err != nil {
+		fmt.Println("Error decoding JSON response:", err)
+		return "", ""
+	}
+	nonceOldKey := data["nonceOldKey"]
+	nonceNewKey := data["nonceNewKey"]
+	return nonceOldKey, nonceNewKey
+}
+
+func createNewJwt(oldICT []byte, privKey *rsa.PrivateKey, fingerprintOld string, fingerprintNew string,
+	frontEndID string) (string, error) {
+	myClaims := myJWKClaims{
+		KeyType:   "RSA",
+		Usage:     "sig",
+		KeyID:     GenerateKIDFromPublicKey(&privKey.PublicKey),
+		Algorithm: "RS256",
+		Exponent:  strconv.Itoa(privKey.PublicKey.E),
+		Modulus:   privKey.PublicKey.N.String(),
+	}
+	claims := jwt.MapClaims{
+		"sub":               frontEndID,
+		"iss":               "client",
+		"fingerprintoldkey": fingerprintOld,
+		"fingerprintnewkey": fingerprintNew,
+		"exp":               time.Now().Add(time.Hour * 1).Unix(),
+		"jwk":               myClaims,
+		"ict":               string(oldICT),
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+	tokenString, err := token.SignedString(privKey)
+	if err != nil {
+		return "", err
+	}
+	return tokenString, nil
+}
+
+func VerifyICT() bool {
+	return true
 }

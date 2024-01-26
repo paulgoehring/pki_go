@@ -42,12 +42,20 @@ var SerialNumber = big.NewInt(0)
 var AppName string = "RootPkiServer"
 var PemCertChain []string
 
+var challengesRenew map[string]ChallengeObjectRenew
+
 //maybe load private key and cert here for better performance
 
 type ChallengeObject struct {
 	// APP ID and Nonce Token for this App
 	ID         string
 	NonceToken string
+}
+
+type ChallengeObjectRenew struct {
+	ID               string
+	NonceTokenOldKey string
+	NonceTokenNewKey string
 }
 
 type PublicKeyInfo struct {
@@ -79,6 +87,7 @@ func Initialize() {
 	CreateKeyPair("private.key")
 
 	challenges = make(map[string]ChallengeObject)
+	challengesRenew = make(map[string]ChallengeObjectRenew)
 	tableAppIDs = make(map[string]string)
 
 	// TODO: List of valid APP IDs, search in marble cert !!
@@ -696,4 +705,246 @@ func DefineTLSConfig() *tls.Config {
 	}
 	return tlsConfig
 
+}
+
+func GetChallengeRenewGet(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "No valid Method", http.StatusMethodNotAllowed)
+		return
+	}
+	fmt.Println("Got Challenge Request")
+
+	frontendAppID := r.URL.Query().Get("appID")
+
+	nonce1 := GenerateNonce()
+	nonce2 := GenerateNonce()
+
+	if frontendAppID != "" {
+		newRequest := ChallengeObjectRenew{
+			ID:               frontendAppID,
+			NonceTokenOldKey: nonce1,
+			NonceTokenNewKey: nonce2,
+		}
+
+		challengesRenew[frontendAppID] = newRequest
+
+		// Respond with a JSON containing both nonces
+		response := map[string]string{
+			"nonce1": nonce1,
+			"nonce2": nonce2,
+		}
+
+		responseJSON, err := json.Marshal(response)
+		if err != nil {
+			http.Error(w, "Error encoding JSON response", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(responseJSON)
+		return
+	}
+	fmt.Println("value for AppID missing")
+	nonce := "Value for AppID missing"
+
+	w.Header().Set("Content-Type", "text/plain")
+	fmt.Fprint(w, nonce)
+}
+
+func GetNewChallengeGet(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "No valid Method", http.StatusMethodNotAllowed)
+		return
+	}
+	fmt.Println("Got Challenge Request")
+
+	frontendAppID := r.URL.Query().Get("appID")
+
+	nonce1 := GenerateNonce()
+	nonce2 := GenerateNonce()
+
+	if frontendAppID != "" {
+		newRequest := ChallengeObjectRenew{
+			ID:               frontendAppID,
+			NonceTokenOldKey: nonce1,
+			NonceTokenNewKey: nonce2,
+		}
+
+		challengesRenew[frontendAppID] = newRequest
+
+		// Respond with a JSON containing both nonces
+		response := map[string]string{
+			"nonceOldKey": nonce1,
+			"nonceNewKey": nonce2,
+		}
+
+		responseJSON, err := json.Marshal(response)
+		if err != nil {
+			http.Error(w, "Error encoding JSON response", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(responseJSON)
+		return
+	}
+
+	fmt.Println("value for AppID missing")
+	nonce := "Value for AppID missing"
+
+	w.Header().Set("Content-Type", "text/plain")
+	fmt.Fprint(w, nonce)
+}
+
+func GetNewTokenGet(w http.ResponseWriter, r *http.Request) {
+	// TODO: add query parameter new PubKey
+	// check if appID in marble cert valid
+	// app ID not needed, since coordinator just gives certificates to valid apps
+	if r.Method != http.MethodGet {
+		http.Error(w, "No valid Method", http.StatusMethodNotAllowed)
+		return
+	}
+	fmt.Println("Got Certification request")
+
+	tokenString := r.Header.Get("Authorization")[7:]
+
+	parsedToken, _ := jwt.Parse(tokenString, nil)
+
+	privateKey, err := LoadPrivateKeyFromFile("private.key")
+
+	claims, ok := parsedToken.Claims.(jwt.MapClaims)
+	if !ok {
+		// handle invalid claims ?
+		fmt.Println("Invalid JWT claims")
+		return
+	}
+
+	oldIct, ok := claims["ict"].(string)
+	if !ok {
+		http.Error(w, "No ict found in request", http.StatusUnauthorized)
+		return
+	}
+
+	valid, err := VerifyICT(&privateKey.PublicKey, oldIct)
+	if !valid {
+		fmt.Println("Unsuccessfull", err)
+		w.WriteHeader(http.StatusUnauthorized)
+		message := "Access Denied: You do not have permission to access this resource."
+		fmt.Fprintln(w, message)
+		return
+	}
+
+	parsedIct, err := jwt.Parse(oldIct, nil)
+
+	ictClaims, ok := parsedIct.Claims.(jwt.MapClaims)
+	if !ok {
+		fmt.Println("Invalid JWT claims")
+		return
+	}
+
+	fmt.Println("OldICT:   " + parsedIct.Raw)
+
+	oldPublicKeyData := ictClaims["jwk"].(map[string]interface{})
+	n1, _ := oldPublicKeyData["n"].(string)
+	e1, _ := oldPublicKeyData["e"].(string)
+
+	n2 := new(big.Int)
+	n2.SetString(n1, 10)
+
+	e2 := new(big.Int)
+	e2.SetString(e1, 10)
+
+	recreateOldPubKey := &rsa.PublicKey{
+		N: n2,
+		E: int(e2.Int64()),
+	}
+
+	newPublicKeyData := claims["jwk"].(map[string]interface{})
+	n11, _ := newPublicKeyData["n"].(string)
+	e11, _ := newPublicKeyData["e"].(string)
+	n22 := new(big.Int)
+	n22.SetString(n11, 10)
+
+	e22 := new(big.Int)
+	e22.SetString(e11, 10)
+
+	recreateNewPubKey := &rsa.PublicKey{
+		N: n22,
+		E: int(e22.Int64()),
+	}
+
+	signedOldFingerprint := claims["fingerprintoldkey"].(string)
+	signedNewFingerprint := claims["fingerprintnewkey"].(string)
+	frontendAppID := claims["sub"].(string)
+
+	oldFingerprintToVerify := challengesRenew[frontendAppID].NonceTokenOldKey + challenges[frontendAppID].ID
+	newFingerprintToVerify := challengesRenew[frontendAppID].NonceTokenNewKey + challenges[frontendAppID].ID
+
+	ver, err := VerifySignature(oldFingerprintToVerify, signedOldFingerprint, recreateOldPubKey)
+	if ver {
+		fmt.Println("Verification of old Key and ICT successfull")
+	} else {
+		fmt.Println("Unsuccessfull", err)
+		w.WriteHeader(http.StatusUnauthorized)
+		message := "Access Denied: You do not have permission to access this resource."
+		fmt.Fprintln(w, message)
+		return
+	}
+
+	ver, err = VerifySignature(newFingerprintToVerify, signedNewFingerprint, recreateNewPubKey)
+	if ver {
+		fmt.Println("Verification of new Key successfull")
+	} else {
+		fmt.Println("Unsuccessfull", err)
+		w.WriteHeader(http.StatusUnauthorized)
+		message := "Access Denied: You do not have permission to access this resource."
+		fmt.Fprintln(w, message)
+		return
+	}
+
+	newCert := base64.StdEncoding.EncodeToString(CreateCert(SerialNumber, recreateNewPubKey, PathOwnCrt, PathServerKey,
+		frontendAppID, 1, "client"))
+
+	newJwt, newValidJwt := CreateJwt(privateKey, frontendAppID, recreateNewPubKey, newCert, PemCertChain)
+
+	w.Header().Set("Content-Type", "application/json")
+	fmt.Fprint(w, newJwt)
+
+	// delete old KID from list
+	oldKid := oldPublicKeyData["kid"].(string)
+
+	PublicKeys = DeleteKeyByKid(PublicKeys, oldKid)
+
+	// append new KID to list
+	PublicKeys = append(PublicKeys, newValidJwt)
+
+}
+
+func DeleteKeyByKid(keys []PublicKeyInfo, kidToDelete string) []PublicKeyInfo {
+	var updatedKeys []PublicKeyInfo
+
+	for _, key := range keys {
+		if key.Kid != kidToDelete {
+			// Add keys with a different Kid to the updatedKeys array
+			updatedKeys = append(updatedKeys, key)
+		}
+	}
+
+	return updatedKeys
+}
+
+func VerifyICT(pubKey *rsa.PublicKey, tokenString string) (bool, error) {
+	if pubKey != nil {
+		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+			return pubKey, nil
+		})
+		if err == nil && token.Valid {
+			return true, nil
+		}
+		return false, err
+	} else {
+		// check for x5c chain and verify
+		return false, nil
+		// if not get pubKey from kid and verify
+	}
 }
