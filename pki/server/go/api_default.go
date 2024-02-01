@@ -111,12 +111,12 @@ func Initialize() {
 	// go renewCertificate()
 
 	// remove and add new certs whenever renew called
-	PemCertChain = append(PemCertChain, base64.StdEncoding.EncodeToString([]byte(PathOwnCrt)))
+	//PemCertChain = append(PemCertChain, base64.StdEncoding.EncodeToString([]byte(PathOwnCrt)))
 	time.Sleep(5 * time.Second)
 
 	RenewCertificate(PathJWT, PathOwnCrt, PathOwnKey, false, "asd123")
 
-	PemCertChain = append(PemCertChain[1:], base64.StdEncoding.EncodeToString([]byte(PathOwnCrt)))
+	//PemCertChain = append(PemCertChain[1:], base64.StdEncoding.EncodeToString([]byte(PathOwnCrt)))
 
 }
 
@@ -407,27 +407,35 @@ func GetCertificate(renew bool, newPubKey bool) {
 		return
 	}
 
-	x5c, ok := token.Header["x5c"]
+	x5cert, ok := token.Header["x5cert"].(string)
+	if !ok {
+		fmt.Println("No x5cert field in Header")
+	}
+
+	x5cField, ok := token.Header["x5c"].([]string)
 	if !ok {
 		fmt.Println("No x5c field in Header")
-		return
 	}
 
-	firstX5C := ""
-	if x5cArray, isArray := x5c.([]interface{}); isArray && len(x5cArray) > 0 {
-		if firstElement, isString := x5cArray[0].(string); isString {
-			firstX5C = firstElement
-		}
-	}
+	/*
+		firstX5C := ""
+		if x5cArray, isArray := x5c.([]interface{}); isArray && len(x5cArray) > 0 {
+			if firstElement, isString := x5cArray[0].(string); isString {
+				firstX5C = firstElement
+			}
+		}*/
 
-	firstx5cPEM, err := base64.RawURLEncoding.DecodeString(firstX5C)
+	x5certPEM, err := base64.RawURLEncoding.DecodeString(x5cert)
 	if err != nil {
 		fmt.Println("Error decoding x5c", err)
 		return
 	}
+
+	PemCertChain = append([]string{x5cert}, x5cField...)
+
 	certFile, err := os.Create(PathOwnCrt)
 	defer certFile.Close()
-	_, err = certFile.Write(firstx5cPEM)
+	_, err = certFile.Write(x5certPEM)
 
 }
 
@@ -458,7 +466,7 @@ func GenerateKIDFromPublicKey(publicKey *rsa.PublicKey) string {
 
 func CreateJwt(privKey *rsa.PrivateKey, frontEndID string, publicKey *rsa.PublicKey, issuedCert string,
 	certChain []string) string {
-	x5cField := append([]string{issuedCert}, certChain...)
+	//x5cField := append([]string{issuedCert}, certChain...)
 
 	iat := time.Now()
 	expiration := iat.Add(time.Hour * 1)
@@ -479,9 +487,10 @@ func CreateJwt(privKey *rsa.PrivateKey, frontEndID string, publicKey *rsa.Public
 		"jwk": myClaims,
 	}
 	header := jwt.MapClaims{
-		"alg": "RS256",
-		"typ": "JWT",
-		"x5c": x5cField, // certificate Chain to validate jwt and if certificate needed
+		"alg":    "RS256",
+		"typ":    "JWT",
+		"x5c":    certChain, // x5cField certificate Chain to validate jwt and if certificate needed
+		"x5cert": issuedCert,
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
@@ -751,6 +760,19 @@ func GetNewTokenGet(w http.ResponseWriter, r *http.Request) {
 	oldFingerprintToVerify := challengesRenew[frontendAppID].NonceTokenOldKey + challenges[frontendAppID].ID
 	newFingerprintToVerify := challengesRenew[frontendAppID].NonceTokenNewKey + challenges[frontendAppID].ID
 
+	tokenValid, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		return recreateOldPubKey, nil
+	})
+	if err == nil && tokenValid.Valid {
+		fmt.Println("JWT is valid.")
+	} else {
+		fmt.Println("Unsuccessfull", err)
+		w.WriteHeader(http.StatusUnauthorized)
+		message := "Access Denied: You do not have permission to access this resource."
+		fmt.Fprintln(w, message)
+		return
+	}
+
 	ver, err := VerifySignature(oldFingerprintToVerify, signedOldFingerprint, recreateOldPubKey)
 	if ver {
 		fmt.Println("Verification of old Key and ICT successfull")
@@ -813,7 +835,8 @@ func RenewCertificate(pathJwt string, certPath string, pathKey string, newKey bo
 		fmt.Println("Error signing new token", err)
 	}
 
-	newJwt, err := createNewJwt(oldICT, privateKeyNew, signedTokenOld, signedTokenNew, appID)
+	// sign Jwt with old Key to make proof of possession
+	newJwt, err := createNewJwt(oldICT, privateKeyOld, signedTokenOld, signedTokenNew, appID)
 	if err != nil {
 		fmt.Println("Error creating JWT token", err)
 	}
@@ -847,27 +870,37 @@ func RenewCertificate(pathJwt string, certPath string, pathKey string, newKey bo
 		return
 	}
 
-	x5c, ok := token.Header["x5c"]
+	x5cert, ok := token.Header["x5cert"].(string)
+	if !ok {
+		fmt.Println("No x5cert field in Header")
+		return
+	}
+
+	x5cField, ok := token.Header["x5c"].([]string)
 	if !ok {
 		fmt.Println("No x5c field in Header")
 		return
 	}
 
-	firstX5C := ""
-	if x5cArray, isArray := x5c.([]interface{}); isArray && len(x5cArray) > 0 {
-		if firstElement, isString := x5cArray[0].(string); isString {
-			firstX5C = firstElement
-		}
-	}
+	/*
+		firstX5C := ""
+		if x5cArray, isArray := x5c.([]interface{}); isArray && len(x5cArray) > 0 {
+			if firstElement, isString := x5cArray[0].(string); isString {
+				firstX5C = firstElement
+			}
+		}*/
 
-	firstx5cPEM, err := base64.StdEncoding.DecodeString(firstX5C)
+	x5certPEM, err := base64.RawURLEncoding.DecodeString(x5cert)
 	if err != nil {
 		fmt.Println("Error decoding x5c", err)
 		return
 	}
-	certFile, err := os.Create(certPath)
+
+	PemCertChain = append([]string{x5cert}, x5cField...)
+
+	certFile, err := os.Create(PathOwnCrt)
 	defer certFile.Close()
-	_, err = certFile.Write(firstx5cPEM)
+	_, err = certFile.Write(x5certPEM)
 
 }
 

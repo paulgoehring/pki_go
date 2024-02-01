@@ -87,27 +87,28 @@ func GetCertificate(keyPath string, tokenPath string, marbleKeyPath string, marb
 		return
 	}
 
-	x5c, ok := token.Header["x5c"]
+	x5cert, ok := token.Header["x5cert"].(string)
 	if !ok {
-		fmt.Println("No x5c field in Header")
+		fmt.Println("No x5cert field in Header")
 		return
 	}
 
-	firstX5C := ""
-	if x5cArray, isArray := x5c.([]interface{}); isArray && len(x5cArray) > 0 {
-		if firstElement, isString := x5cArray[0].(string); isString {
-			firstX5C = firstElement
-		}
-	}
+	/*
+		firstX5C := ""
+		if x5cArray, isArray := x5c.([]interface{}); isArray && len(x5cArray) > 0 {
+			if firstElement, isString := x5cArray[0].(string); isString {
+				firstX5C = firstElement
+			}
+		}*/
 
-	firstx5cPEM, err := base64.StdEncoding.DecodeString(firstX5C)
+	x5certPEM, err := base64.RawURLEncoding.DecodeString(x5cert)
 	if err != nil {
 		fmt.Println("Error decoding x5c", err)
 		return
 	}
 	certFile, err := os.Create(certPath)
 	defer certFile.Close()
-	_, err = certFile.Write(firstx5cPEM)
+	_, err = certFile.Write(x5certPEM)
 
 }
 
@@ -284,7 +285,8 @@ func RenewCertificate(pathJwt string, certPath string, pathKey string, newKey bo
 		fmt.Println("Error signing new token", err)
 	}
 
-	newJwt, err := createNewJwt(oldICT, privateKeyNew, signedTokenOld, signedTokenNew, appID)
+	// sign Jwt with old Key to make proof of possession
+	newJwt, err := createNewJwt(oldICT, privateKeyOld, signedTokenOld, signedTokenNew, appID)
 	if err != nil {
 		fmt.Println("Error creating JWT token", err)
 	}
@@ -318,27 +320,28 @@ func RenewCertificate(pathJwt string, certPath string, pathKey string, newKey bo
 		return
 	}
 
-	x5c, ok := token.Header["x5c"]
+	x5cert, ok := token.Header["x5cert"].(string)
 	if !ok {
-		fmt.Println("No x5c field in Header")
+		fmt.Println("No x5cert field in Header")
 		return
 	}
 
-	firstX5C := ""
-	if x5cArray, isArray := x5c.([]interface{}); isArray && len(x5cArray) > 0 {
-		if firstElement, isString := x5cArray[0].(string); isString {
-			firstX5C = firstElement
-		}
-	}
+	/*
+		firstX5C := ""
+		if x5cArray, isArray := x5c.([]interface{}); isArray && len(x5cArray) > 0 {
+			if firstElement, isString := x5cArray[0].(string); isString {
+				firstX5C = firstElement
+			}
+		}*/
 
-	firstx5cPEM, err := base64.StdEncoding.DecodeString(firstX5C)
+	x5certPEM, err := base64.RawURLEncoding.DecodeString(x5cert)
 	if err != nil {
 		fmt.Println("Error decoding x5c", err)
 		return
 	}
 	certFile, err := os.Create(certPath)
 	defer certFile.Close()
-	_, err = certFile.Write(firstx5cPEM)
+	_, err = certFile.Write(x5certPEM)
 
 }
 

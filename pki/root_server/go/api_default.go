@@ -461,7 +461,7 @@ func GenerateKIDFromPublicKey(publicKey *rsa.PublicKey) string {
 
 func CreateJwt(privKey *rsa.PrivateKey, frontEndID string,
 	publicKey *rsa.PublicKey, issuedCert string, certChain []string) (string, PublicKeyInfo) {
-	x5cField := append([]string{issuedCert}, certChain...)
+	// x5cField := append([]string{issuedCert}, certChain...)
 	// Create a new JWT OR NEW CERT
 	// TODO: add CertChain and Certificate claims (in header?)
 	iat := time.Now()
@@ -483,9 +483,10 @@ func CreateJwt(privKey *rsa.PrivateKey, frontEndID string,
 		"jwk": myClaims,
 	}
 	header := jwt.MapClaims{
-		"alg": "RS256",
-		"typ": "JWT",
-		"x5c": x5cField, // certificate Chain to validate jwt and if certificate needed
+		"alg":    "RS256",
+		"typ":    "JWT",
+		"x5c":    certChain,  // x5cField certificate Chain to validate jwt and if certificate needed
+		"x5cert": issuedCert, // maybe move to claims
 	}
 	publicKeyData := PublicKeyInfo{
 		E:   strconv.Itoa(publicKey.E),
@@ -873,12 +874,28 @@ func GetNewTokenGet(w http.ResponseWriter, r *http.Request) {
 		E: int(e22.Int64()),
 	}
 
+	// check if token got signed by old key for verify old key
+	// first sign the token with old key
 	signedOldFingerprint := claims["fingerprintoldkey"].(string)
 	signedNewFingerprint := claims["fingerprintnewkey"].(string)
 	frontendAppID := claims["sub"].(string)
 
 	oldFingerprintToVerify := challengesRenew[frontendAppID].NonceTokenOldKey + challenges[frontendAppID].ID
 	newFingerprintToVerify := challengesRenew[frontendAppID].NonceTokenNewKey + challenges[frontendAppID].ID
+
+	tokenValid, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		return recreateOldPubKey, nil
+	})
+
+	if err == nil && tokenValid.Valid {
+		fmt.Println("JWT is valid.")
+	} else {
+		fmt.Println("Unsuccessfull", err)
+		w.WriteHeader(http.StatusUnauthorized)
+		message := "Access Denied: You do not have permission to access this resource."
+		fmt.Fprintln(w, message)
+		return
+	}
 
 	ver, err := VerifySignature(oldFingerprintToVerify, signedOldFingerprint, recreateOldPubKey)
 	if ver {
@@ -934,17 +951,118 @@ func DeleteKeyByKid(keys []PublicKeyInfo, kidToDelete string) []PublicKeyInfo {
 }
 
 func VerifyICT(pubKey *rsa.PublicKey, tokenString string) (bool, error) {
-	if pubKey != nil {
+
+	PathRootCert := PathOwnCrt
+
+	token, _ := jwt.Parse(tokenString, nil)
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		fmt.Println("Invalid Claims")
+	}
+
+	x5cChainHeader, ok := token.Header["x5c"]
+	if !ok {
+		// maybe here try verify with just root public key
+		fmt.Println("x5c chain not found in token header")
+		return false, nil
+	}
+
+	if x5cChainHeader != nil && PathRootCert != "" {
+
+		x5cChainStr, ok := x5cChainHeader.([]interface{})
+		if !ok {
+			fmt.Println("Invalid x5c chain format in token header")
+			return false, nil
+		}
+
+		var x5cChain []string
+		for _, cert := range x5cChainStr {
+			certStr, ok := cert.(string)
+			if !ok {
+				fmt.Println("Invalid certificate format in x5c chain")
+				return false, nil
+			}
+			x5cChain = append(x5cChain, certStr)
+		}
+		// append root cert at the end
+
+		rootCACertData, err := os.ReadFile(PathRootCert)
+		if err != nil {
+			fmt.Println("Error reading root CA certificate:", err)
+			return false, err
+		}
+		x5cChain = append(x5cChain, string(rootCACertData))
+
+		// Decode the PEM-encoded certificates from the x5c chain
+		var certs []*x509.Certificate
+		for _, certStr := range x5cChain {
+			certBytes, err := base64.StdEncoding.DecodeString(certStr)
+			if err != nil {
+				fmt.Println("Error decoding certificate:", err)
+				return false, err
+			}
+
+			block, _ := pem.Decode(certBytes)
+			if block == nil {
+				fmt.Println("Failed to decode PEM block from certificate")
+				return false, err
+			}
+
+			cert, err := x509.ParseCertificate(block.Bytes)
+			if err != nil {
+				fmt.Println("Error parsing certificate:", err)
+				return false, err
+			}
+
+			// Validate the certificate against the next one in the chain
+			if len(certs) > 0 {
+				if err := certs[len(certs)-1].CheckSignatureFrom(cert); err != nil {
+					fmt.Println("Certificate validation failed:", err)
+					return false, err
+				} //  TODO :: check if issued and issuer matches
+			}
+
+			certs = append(certs, cert)
+		}
+		// at the end check if first public key is the one that signed jwt
+		publicKeySigner := certs[0].PublicKey.(*rsa.PublicKey)
 		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-			return pubKey, nil
+			return publicKeySigner, nil
 		})
 		if err == nil && token.Valid {
 			return true, nil
 		}
 		return false, err
-	} else {
-		// check for x5c chain and verify
-		return false, nil
-		// if not get pubKey from kid and verify
+	} else if PathRootCert != "" {
+		// search publicKey in  Show Cert, root PKI can just look it up
+		// try get x509 cert
+		// get signer kid from jwt
+		// recreate PublicKey
+		// verify
+		var publicKeyKid PublicKeyInfo
+		for _, key := range PublicKeys {
+			if key.Kid == claims["kid"] {
+				publicKeyKid = key
+			}
+		}
+		n := new(big.Int)
+		n.SetString(publicKeyKid.N, 10)
+		e := new(big.Int)
+		e.SetString(publicKeyKid.E, 10)
+		recreatePubKey := &rsa.PublicKey{
+			N: n,
+			E: int(e.Int64()),
+		}
+		tokenValid, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+			return recreatePubKey, nil
+		})
+		if err == nil && tokenValid.Valid {
+			fmt.Println("JWT is valid.")
+			return true, nil
+		} else {
+			fmt.Println("JWT is not valid")
+			return false, err
+		}
 	}
+	return false, nil
 }
