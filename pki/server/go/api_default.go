@@ -45,6 +45,10 @@ var PathMarbleOwnCrt string = "marbleServerCert.crt"
 var PathMarblePrivateKey string = "marbleServer.key"
 var SerialNumber = big.NewInt(0)
 var PemCertChain []string
+var portSecure = 8080 // os.getEnv("portSecure")
+var portInsecure = 8081 // os.getEnv("portInsecure")
+var IpServer = "localhost"
+var OwnLayer = 1 // os.getEnv("layer")
 
 // everything which is a global variable and can be changed
 // should be accesseed via env parameter and can be defined
