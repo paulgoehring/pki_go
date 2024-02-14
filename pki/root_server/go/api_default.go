@@ -40,7 +40,6 @@ var PathServerKey string = "private.key"
 var PathRootCrt string = "root.crt"
 var SerialNumber = big.NewInt(0)
 var AppName string = "RootPkiServer"
-var PemCertChain []string
 
 var challengesRenew map[string]ChallengeObjectRenew
 
@@ -121,9 +120,6 @@ func Initialize() {
 	if err != nil {
 		fmt.Println(err)
 	}
-
-	// root cert not necessary needed
-	//PemCertChain = append(PemCertChain, base64.StdEncoding.EncodeToString(rootCert))
 
 }
 
@@ -293,30 +289,6 @@ func GetTokenGet(w http.ResponseWriter, r *http.Request) {
 	marblerunCACertPool := x509.NewCertPool()
 	marblerunCACertPool.AppendCertsFromPEM(marblerunCACert)
 
-	// Create a TLS configuration for the server
-	/*tlsConfig := &tls.Config{
-		Certificates: []tls.Certificate{serverCert},
-		ClientAuth:   tls.RequireAndVerifyClientCert,
-		ClientCAs:    caCertPool,
-		VerifyPeerCertificate: func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
-			// Perform additional checks only on certificates issued by a specific CA
-			for _, chain := range verifiedChains {
-				for _, cert := range chain {
-					// Check if the certificate is issued by the specific CA
-					if marblerunCACert.Issuer == cert.Issuer {
-						// Additional checks on certificates from the specific CA
-						if time.Now().After(cert.NotAfter) || time.Now().Before(cert.NotBefore) {
-							return fmt.Errorf("client certificate from specific CA is expired or not yet valid")
-						}
-						// Add more checks as needed
-					}
-				}
-			}
-			return nil
-		},
-	}
-	*/
-
 	claims, ok := parsedToken.Claims.(jwt.MapClaims)
 	if !ok {
 		// handle invalid claims ?
@@ -339,7 +311,7 @@ func GetTokenGet(w http.ResponseWriter, r *http.Request) {
 		E: int(e2.Int64()),
 	}
 	publicKeyPEM22 := &pem.Block{
-		Type:  "RSA PUBLIC KEY",
+		Type:  "RSCreateJwtA PUBLIC KEY",
 		Bytes: x509.MarshalPKCS1PublicKey(recreatePubKey),
 	}
 	fmt.Println("\nPublic Key in PEM Format:")
@@ -363,9 +335,7 @@ func GetTokenGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	newCert := base64.StdEncoding.EncodeToString(CreateCert(SerialNumber, recreatePubKey, PathOwnCrt, PathServerKey,
-		frontendAppID, 1, "intermediate"))
-	newJwt, newValidJwt := CreateJwt(privateKey, frontendAppID, recreatePubKey, newCert, PemCertChain)
+	newJwt, newValidJwt := CreateJwt(privateKey, frontendAppID, recreatePubKey)
 
 	w.Header().Set("Content-Type", "application/json")
 	fmt.Fprint(w, newJwt)
@@ -460,10 +430,8 @@ func GenerateKIDFromPublicKey(publicKey *rsa.PublicKey) string {
 }
 
 func CreateJwt(privKey *rsa.PrivateKey, frontEndID string,
-	publicKey *rsa.PublicKey, issuedCert string, certChain []string) (string, PublicKeyInfo) {
-	// x5cField := append([]string{issuedCert}, certChain...)
-	// Create a new JWT OR NEW CERT
-	// TODO: add CertChain and Certificate claims (in header?)
+	publicKey *rsa.PublicKey) (string, PublicKeyInfo) {
+
 	iat := time.Now()
 	expiration := iat.Add(time.Hour * 1)
 	myClaims := myJWKClaims{
@@ -477,16 +445,15 @@ func CreateJwt(privKey *rsa.PrivateKey, frontEndID string,
 	claims := jwt.MapClaims{
 		"sub": frontEndID,
 		"iss": "server",
-		"kid": GenerateKIDFromPublicKey(&privKey.PublicKey),
-		"iat": iat.Unix(),        // maybe without Unix?
-		"exp": expiration.Unix(), // maybe without unix
+		"kid": GenerateKIDFromPublicKey(&privKey.PublicKey), // delete here later
+		"iat": iat.Unix(),                                   // maybe without Unix?
+		"exp": expiration.Unix(),                            // maybe without unix
 		"jwk": myClaims,
 	}
 	header := jwt.MapClaims{
-		"alg":    "RS256",
-		"typ":    "JWT",
-		"x5c":    certChain,  // x5cField certificate Chain to validate jwt and if certificate needed
-		"x5cert": issuedCert, // maybe move to claims
+		"alg": "RS256",
+		"typ": "JWT",
+		"kid": GenerateKIDFromPublicKey(&privKey.PublicKey),
 	}
 	publicKeyData := PublicKeyInfo{
 		E:   strconv.Itoa(publicKey.E),
@@ -919,10 +886,7 @@ func GetNewTokenGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	newCert := base64.StdEncoding.EncodeToString(CreateCert(SerialNumber, recreateNewPubKey, PathOwnCrt, PathServerKey,
-		frontendAppID, 1, "client"))
-
-	newJwt, newValidJwt := CreateJwt(privateKey, frontendAppID, recreateNewPubKey, newCert, PemCertChain)
+	newJwt, newValidJwt := CreateJwt(privateKey, frontendAppID, recreateNewPubKey)
 
 	w.Header().Set("Content-Type", "application/json")
 	fmt.Fprint(w, newJwt)
@@ -952,117 +916,40 @@ func DeleteKeyByKid(keys []PublicKeyInfo, kidToDelete string) []PublicKeyInfo {
 
 func VerifyICT(pubKey *rsa.PublicKey, tokenString string) (bool, error) {
 
-	PathRootCert := PathOwnCrt
-
 	token, _ := jwt.Parse(tokenString, nil)
 	claims, ok := token.Claims.(jwt.MapClaims)
 	if !ok {
 		fmt.Println("Invalid Claims")
 	}
 
-	x5cChainHeader, ok := token.Header["x5c"]
-	if !ok {
-		// maybe here try verify with just root public key
-		fmt.Println("x5c chain not found in token header")
-		return false, nil
+	// search publicKey in  Show Cert, root PKI can just look it up
+	// try get x509 cert
+	// get signer kid from jwt
+	// recreate PublicKey
+	// verify
+	var publicKeyKid PublicKeyInfo
+	for _, key := range PublicKeys {
+		if key.Kid == claims["kid"] {
+			publicKeyKid = key
+		}
 	}
-
-	if x5cChainHeader != nil && PathRootCert != "" {
-
-		x5cChainStr, ok := x5cChainHeader.([]interface{})
-		if !ok {
-			fmt.Println("Invalid x5c chain format in token header")
-			return false, nil
-		}
-
-		var x5cChain []string
-		for _, cert := range x5cChainStr {
-			certStr, ok := cert.(string)
-			if !ok {
-				fmt.Println("Invalid certificate format in x5c chain")
-				return false, nil
-			}
-			x5cChain = append(x5cChain, certStr)
-		}
-		// append root cert at the end
-
-		rootCACertData, err := os.ReadFile(PathRootCert)
-		if err != nil {
-			fmt.Println("Error reading root CA certificate:", err)
-			return false, err
-		}
-		x5cChain = append(x5cChain, string(rootCACertData))
-
-		// Decode the PEM-encoded certificates from the x5c chain
-		var certs []*x509.Certificate
-		for _, certStr := range x5cChain {
-			certBytes, err := base64.StdEncoding.DecodeString(certStr)
-			if err != nil {
-				fmt.Println("Error decoding certificate:", err)
-				return false, err
-			}
-
-			block, _ := pem.Decode(certBytes)
-			if block == nil {
-				fmt.Println("Failed to decode PEM block from certificate")
-				return false, err
-			}
-
-			cert, err := x509.ParseCertificate(block.Bytes)
-			if err != nil {
-				fmt.Println("Error parsing certificate:", err)
-				return false, err
-			}
-
-			// Validate the certificate against the next one in the chain
-			if len(certs) > 0 {
-				if err := certs[len(certs)-1].CheckSignatureFrom(cert); err != nil {
-					fmt.Println("Certificate validation failed:", err)
-					return false, err
-				} //  TODO :: check if issued and issuer matches
-			}
-
-			certs = append(certs, cert)
-		}
-		// at the end check if first public key is the one that signed jwt
-		publicKeySigner := certs[0].PublicKey.(*rsa.PublicKey)
-		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-			return publicKeySigner, nil
-		})
-		if err == nil && token.Valid {
-			return true, nil
-		}
+	n := new(big.Int)
+	n.SetString(publicKeyKid.N, 10)
+	e := new(big.Int)
+	e.SetString(publicKeyKid.E, 10)
+	recreatePubKey := &rsa.PublicKey{
+		N: n,
+		E: int(e.Int64()),
+	}
+	tokenValid, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		return recreatePubKey, nil
+	})
+	if err == nil && tokenValid.Valid {
+		fmt.Println("JWT is valid.")
+		return true, nil
+	} else {
+		fmt.Println("JWT is not valid")
 		return false, err
-	} else if PathRootCert != "" {
-		// search publicKey in  Show Cert, root PKI can just look it up
-		// try get x509 cert
-		// get signer kid from jwt
-		// recreate PublicKey
-		// verify
-		var publicKeyKid PublicKeyInfo
-		for _, key := range PublicKeys {
-			if key.Kid == claims["kid"] {
-				publicKeyKid = key
-			}
-		}
-		n := new(big.Int)
-		n.SetString(publicKeyKid.N, 10)
-		e := new(big.Int)
-		e.SetString(publicKeyKid.E, 10)
-		recreatePubKey := &rsa.PublicKey{
-			N: n,
-			E: int(e.Int64()),
-		}
-		tokenValid, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-			return recreatePubKey, nil
-		})
-		if err == nil && tokenValid.Valid {
-			fmt.Println("JWT is valid.")
-			return true, nil
-		} else {
-			fmt.Println("JWT is not valid")
-			return false, err
-		}
 	}
-	return false, nil
+
 }

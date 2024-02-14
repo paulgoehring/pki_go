@@ -74,41 +74,10 @@ func GetCertificate(keyPath string, tokenPath string, marbleKeyPath string, marb
 	fmt.Println("Response: ")
 	fmt.Println(string(body))
 
-	jwtResponse := string(body)
-
 	err = os.WriteFile(tokenPath, body, 0644)
 	if err != nil {
 		fmt.Println("JWT could not be stored", err)
 	}
-
-	token, _, err := new(jwt.Parser).ParseUnverified(jwtResponse, jwt.MapClaims{})
-	if err != nil {
-		fmt.Println("Error parsing JWT:", err)
-		return
-	}
-
-	x5cert, ok := token.Header["x5cert"].(string)
-	if !ok {
-		fmt.Println("No x5cert field in Header")
-		return
-	}
-
-	/*
-		firstX5C := ""
-		if x5cArray, isArray := x5c.([]interface{}); isArray && len(x5cArray) > 0 {
-			if firstElement, isString := x5cArray[0].(string); isString {
-				firstX5C = firstElement
-			}
-		}*/
-
-	x5certPEM, err := base64.RawURLEncoding.DecodeString(x5cert)
-	if err != nil {
-		fmt.Println("Error decoding x5c", err)
-		return
-	}
-	certFile, err := os.Create(certPath)
-	defer certFile.Close()
-	_, err = certFile.Write(x5certPEM)
 
 }
 
@@ -307,41 +276,10 @@ func RenewCertificate(pathJwt string, certPath string, pathKey string, newKey bo
 	fmt.Println("Response: ")
 	fmt.Println(string(body))
 
-	jwtResponse := string(body)
-
 	err = os.WriteFile(pathJwt, body, 0644)
 	if err != nil {
 		fmt.Println("JWT could not be stored", err)
 	}
-
-	token, _, err := new(jwt.Parser).ParseUnverified(jwtResponse, jwt.MapClaims{})
-	if err != nil {
-		fmt.Println("Error parsing JWT:", err)
-		return
-	}
-
-	x5cert, ok := token.Header["x5cert"].(string)
-	if !ok {
-		fmt.Println("No x5cert field in Header")
-		return
-	}
-
-	/*
-		firstX5C := ""
-		if x5cArray, isArray := x5c.([]interface{}); isArray && len(x5cArray) > 0 {
-			if firstElement, isString := x5cArray[0].(string); isString {
-				firstX5C = firstElement
-			}
-		}*/
-
-	x5certPEM, err := base64.RawURLEncoding.DecodeString(x5cert)
-	if err != nil {
-		fmt.Println("Error decoding x5c", err)
-		return
-	}
-	certFile, err := os.Create(certPath)
-	defer certFile.Close()
-	_, err = certFile.Write(x5certPEM)
 
 }
 

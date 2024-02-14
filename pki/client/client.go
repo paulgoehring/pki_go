@@ -9,7 +9,8 @@ import (
 
 var PathMarbleCrt string = "marbleClientCert.crt"
 var PathMarbleRootCrt string = "marblerunCA.crt"
-var PathRPKICrt string = "rootPKI.crt"
+
+// var PathRPKICrt string = "rootPKI.crt"
 var PathMarbleKey string = "marbleClient.key"
 var PathOwnCrt string = "clientPKI.crt"
 var PathIdentityToken string = "client.jwt"

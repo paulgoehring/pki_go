@@ -21,6 +21,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"math/big"
@@ -37,18 +38,19 @@ var rootIp string    //= "http://localhost"
 var rootPort string  //= "8080"
 var selfAppId string //= "asd123"
 var PathJWT string = "PKISJWT.jwt"
-var PathOwnCrt string = "PKISCert.crt"
+
+// var PathOwnCrt string = "PKISCert.crt"
 var PathOwnKey string = "private.key"
 var PathRootCrt string = "root.crt"
 var PathMarbleRootCrt string = "marblerunCA.crt"
 var PathMarbleOwnCrt string = "marbleServerCert.crt"
 var PathMarblePrivateKey string = "marbleServer.key"
 var SerialNumber = big.NewInt(0)
-var PemCertChain []string
-var portSecure = 8080 // os.getEnv("portSecure")
+var portSecure = 8080   // os.getEnv("portSecure")
 var portInsecure = 8081 // os.getEnv("portInsecure")
 var IpServer = "localhost"
-var OwnLayer = 1 // os.getEnv("layer")
+var PathRootIp = "http://localhost"
+var RootPort = "8443"
 
 // everything which is a global variable and can be changed
 // should be accesseed via env parameter and can be defined
@@ -118,7 +120,7 @@ func Initialize() {
 	//PemCertChain = append(PemCertChain, base64.StdEncoding.EncodeToString([]byte(PathOwnCrt)))
 	time.Sleep(5 * time.Second)
 
-	RenewCertificate(PathJWT, PathOwnCrt, PathOwnKey, false, "asd123")
+	RenewCertificate(PathJWT, PathOwnKey, false, "asd123")
 
 	//PemCertChain = append(PemCertChain[1:], base64.StdEncoding.EncodeToString([]byte(PathOwnCrt)))
 
@@ -260,11 +262,7 @@ func GetTokenGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	newCert := base64.StdEncoding.EncodeToString(CreateCert(SerialNumber, recreatePubKey, PathOwnCrt, PathOwnKey,
-		frontendAppID, 1, "client")) // here check which layer mb
-
-	fmt.Println(newCert)
-	newJwt := CreateJwt(privateKey, frontendAppID, recreatePubKey, newCert, PemCertChain)
+	newJwt := CreateJwt(privateKey, frontendAppID, recreatePubKey)
 
 	w.Header().Set("Content-Type", "application/json")
 	fmt.Fprint(w, newJwt)
@@ -403,44 +401,6 @@ func GetCertificate(renew bool, newPubKey bool) {
 		fmt.Println("Error Writing JWT", err)
 	}
 
-	jwtToken := string(body)
-
-	token, _, err := new(jwt.Parser).ParseUnverified(jwtToken, jwt.MapClaims{})
-	if err != nil {
-		fmt.Println("Error parsing JWT:", err)
-		return
-	}
-
-	x5cert, ok := token.Header["x5cert"].(string)
-	if !ok {
-		fmt.Println("No x5cert field in Header")
-	}
-
-	x5cField, ok := token.Header["x5c"].([]string)
-	if !ok {
-		fmt.Println("No x5c field in Header")
-	}
-
-	/*
-		firstX5C := ""
-		if x5cArray, isArray := x5c.([]interface{}); isArray && len(x5cArray) > 0 {
-			if firstElement, isString := x5cArray[0].(string); isString {
-				firstX5C = firstElement
-			}
-		}*/
-
-	x5certPEM, err := base64.RawURLEncoding.DecodeString(x5cert)
-	if err != nil {
-		fmt.Println("Error decoding x5c", err)
-		return
-	}
-
-	PemCertChain = append([]string{x5cert}, x5cField...)
-
-	certFile, err := os.Create(PathOwnCrt)
-	defer certFile.Close()
-	_, err = certFile.Write(x5certPEM)
-
 }
 
 var response struct {
@@ -468,8 +428,7 @@ func GenerateKIDFromPublicKey(publicKey *rsa.PublicKey) string {
 	return kid
 }
 
-func CreateJwt(privKey *rsa.PrivateKey, frontEndID string, publicKey *rsa.PublicKey, issuedCert string,
-	certChain []string) string {
+func CreateJwt(privKey *rsa.PrivateKey, frontEndID string, publicKey *rsa.PublicKey) string {
 	//x5cField := append([]string{issuedCert}, certChain...)
 
 	iat := time.Now()
@@ -485,16 +444,15 @@ func CreateJwt(privKey *rsa.PrivateKey, frontEndID string, publicKey *rsa.Public
 	claims := jwt.MapClaims{
 		"sub": frontEndID,
 		"iss": "server",
-		"kid": GenerateKIDFromPublicKey(&privKey.PublicKey),
-		"iat": iat.Unix(),        // maybe without Unix?
-		"exp": expiration.Unix(), // maybe without unix
+		"kid": GenerateKIDFromPublicKey(&privKey.PublicKey), // delet ehere later
+		"iat": iat.Unix(),                                   // maybe without Unix?
+		"exp": expiration.Unix(),                            // maybe without unix
 		"jwk": myClaims,
 	}
 	header := jwt.MapClaims{
-		"alg":    "RS256",
-		"typ":    "JWT",
-		"x5c":    certChain, // x5cField certificate Chain to validate jwt and if certificate needed
-		"x5cert": issuedCert,
+		"alg": "RS256",
+		"kid": GenerateKIDFromPublicKey(&privKey.PublicKey),
+		"typ": "JWT",
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
@@ -613,18 +571,11 @@ func GetChallenge() []byte {
 func DefineTLSConfig() *tls.Config {
 	var tlsConfig *tls.Config
 
-	ownCert, err := tls.LoadX509KeyPair(PathOwnCrt, PathOwnKey)
+	ownCert, err := tls.LoadX509KeyPair(PathMarbleOwnCrt, PathMarblePrivateKey)
 	if err != nil {
 		fmt.Println("Error Loading Server cert", err)
 		return nil
 	}
-
-	//caCert, err := os.ReadFile(PathRootCrt)
-	// for Root PKI Same
-	//if err != nil {
-	//	fmt.Println("Error loading CA certificate:", err)
-	//	return nil
-	//}
 
 	marbleCert, err := os.ReadFile(PathMarbleRootCrt)
 	if err != nil {
@@ -710,7 +661,7 @@ func GetNewTokenGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !VerifyICT() {
+	if !VerifyICT(PathRootIp, RootPort, oldIct) {
 		fmt.Println("Unsuccessfull", err)
 		w.WriteHeader(http.StatusUnauthorized)
 		message := "Access Denied: You do not have permission to access this resource."
@@ -799,17 +750,14 @@ func GetNewTokenGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	newCert := base64.StdEncoding.EncodeToString(CreateCert(SerialNumber, recreateNewPubKey, PathOwnCrt, PathOwnKey,
-		frontendAppID, 1, "client"))
-
-	newJwt := CreateJwt(privateKey, frontendAppID, recreateNewPubKey, newCert, PemCertChain)
+	newJwt := CreateJwt(privateKey, frontendAppID, recreateNewPubKey)
 
 	w.Header().Set("Content-Type", "application/json")
 	fmt.Fprint(w, newJwt)
 
 }
 
-func RenewCertificate(pathJwt string, certPath string, pathKey string, newKey bool, appID string) {
+func RenewCertificate(pathJwt string, pathKey string, newKey bool, appID string) {
 	// get new challenge
 	// if new key then you need two proof of possession
 	// formulate new jwt, including old jwt
@@ -861,50 +809,10 @@ func RenewCertificate(pathJwt string, certPath string, pathKey string, newKey bo
 	fmt.Println("Response: ")
 	fmt.Println(string(body))
 
-	jwtResponse := string(body)
-
 	err = os.WriteFile(pathJwt, body, 0644)
 	if err != nil {
 		fmt.Println("JWT could not be stored", err)
 	}
-
-	token, _, err := new(jwt.Parser).ParseUnverified(jwtResponse, jwt.MapClaims{})
-	if err != nil {
-		fmt.Println("Error parsing JWT:", err)
-		return
-	}
-
-	x5cert, ok := token.Header["x5cert"].(string)
-	if !ok {
-		fmt.Println("No x5cert field in Header")
-		return
-	}
-
-	x5cField, ok := token.Header["x5c"].([]string)
-	if !ok {
-		fmt.Println("No x5c field in Header")
-		return
-	}
-
-	/*
-		firstX5C := ""
-		if x5cArray, isArray := x5c.([]interface{}); isArray && len(x5cArray) > 0 {
-			if firstElement, isString := x5cArray[0].(string); isString {
-				firstX5C = firstElement
-			}
-		}*/
-
-	x5certPEM, err := base64.RawURLEncoding.DecodeString(x5cert)
-	if err != nil {
-		fmt.Println("Error decoding x5c", err)
-		return
-	}
-
-	PemCertChain = append([]string{x5cert}, x5cField...)
-
-	certFile, err := os.Create(PathOwnCrt)
-	defer certFile.Close()
-	_, err = certFile.Write(x5certPEM)
 
 }
 
@@ -956,6 +864,77 @@ func createNewJwt(oldICT []byte, privKey *rsa.PrivateKey, fingerprintOld string,
 	return tokenString, nil
 }
 
-func VerifyICT() bool {
-	return true
+func VerifyICT(pathRootIp string, rootPort string, tokenString string) bool {
+	token, _ := jwt.Parse(tokenString, nil)
+
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		//resp, err := http.Get(pathRootIp + ":" + rootPort + "/.well-known/certs")
+		resp, err := http.Get("http://localhost:8443/.well-known/certs")
+		if err != nil {
+			return nil, err
+		}
+		defer resp.Body.Close()
+
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, err
+		}
+
+		var jwks = KeyResponse{}
+		err = json.Unmarshal(body, &jwks)
+		if err != nil {
+			return nil, err
+		}
+
+		kid, ok := token.Header["kid"].(string)
+		if !ok {
+			return nil, errors.New("kid field is missing from token or is not a string")
+		}
+
+		var publicKeyKid PublicKeyInfo
+		fmt.Println(jwks)
+		keyFound := false
+		for _, key := range jwks.Keys {
+			if key.Kid == kid {
+				publicKeyKid = key
+				keyFound = true
+				break
+				//rsaPublicKey, err := jwt.ParseRSAPublicKeyFromPEM([]byte(key.N))
+				//if err != nil {
+				//	return nil, err
+				//}
+				//return rsaPublicKey, nil
+			}
+		}
+		if !keyFound {
+			return nil, errors.New("unable to find appropriate key")
+		}
+		//if publicKeyKid == (PublicKeyInfo{}) {
+		//	return nil, errors.New("unable to find appropriate key")
+		//}
+
+		n := new(big.Int)
+		n.SetString(publicKeyKid.N, 10)
+		e := new(big.Int)
+		e.SetString(publicKeyKid.E, 10)
+		recreatePubKey := &rsa.PublicKey{
+			N: n,
+			E: int(e.Int64()),
+		}
+		return recreatePubKey, nil
+	})
+
+	if err != nil {
+		fmt.Println("Error while parsing token: ", err)
+		return false
+	}
+
+	if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
+		fmt.Println("Token is valid. Claims: ", claims)
+		return true
+	} else {
+		fmt.Println("Invalid token")
+		return false
+	}
+	//return true
 }
