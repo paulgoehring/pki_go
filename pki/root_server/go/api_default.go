@@ -729,21 +729,18 @@ func GetNewChallengeGet(w http.ResponseWriter, r *http.Request) {
 	frontendAppID := r.URL.Query().Get("appID")
 
 	nonce1 := GenerateNonce()
-	nonce2 := GenerateNonce()
 
 	if frontendAppID != "" {
 		newRequest := ChallengeObjectRenew{
 			ID:               frontendAppID,
-			NonceTokenOldKey: nonce1,
-			NonceTokenNewKey: nonce2,
+			NonceTokenNewKey: nonce1,
 		}
 
 		challengesRenew[frontendAppID] = newRequest
 
 		// Respond with a JSON containing both nonces
 		response := map[string]string{
-			"nonceOldKey": nonce1,
-			"nonceNewKey": nonce2,
+			"nonceNewKey": nonce1,
 		}
 
 		responseJSON, err := json.Marshal(response)
@@ -843,11 +840,11 @@ func GetNewTokenGet(w http.ResponseWriter, r *http.Request) {
 
 	// check if token got signed by old key for verify old key
 	// first sign the token with old key
-	signedOldFingerprint := claims["fingerprintoldkey"].(string)
+	// signedOldFingerprint := claims["fingerprintoldkey"].(string)
 	signedNewFingerprint := claims["fingerprintnewkey"].(string)
 	frontendAppID := claims["sub"].(string)
 
-	oldFingerprintToVerify := challengesRenew[frontendAppID].NonceTokenOldKey + challenges[frontendAppID].ID
+	//oldFingerprintToVerify := challengesRenew[frontendAppID].NonceTokenOldKey + challenges[frontendAppID].ID
 	newFingerprintToVerify := challengesRenew[frontendAppID].NonceTokenNewKey + challenges[frontendAppID].ID
 
 	tokenValid, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
@@ -864,18 +861,18 @@ func GetNewTokenGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ver, err := VerifySignature(oldFingerprintToVerify, signedOldFingerprint, recreateOldPubKey)
-	if ver {
-		fmt.Println("Verification of old Key and ICT successfull")
-	} else {
-		fmt.Println("Unsuccessfull", err)
-		w.WriteHeader(http.StatusUnauthorized)
-		message := "Access Denied: You do not have permission to access this resource."
-		fmt.Fprintln(w, message)
-		return
-	}
+	//ver, err := VerifySignature(oldFingerprintToVerify, signedOldFingerprint, recreateOldPubKey)
+	//if ver {
+	//	fmt.Println("Verification of old Key and ICT successfull")
+	//} else {
+	//	fmt.Println("Unsuccessfull", err)
+	//	w.WriteHeader(http.StatusUnauthorized)
+	//	message := "Access Denied: You do not have permission to access this resource."
+	//	fmt.Fprintln(w, message)
+	//	return
+	//}
 
-	ver, err = VerifySignature(newFingerprintToVerify, signedNewFingerprint, recreateNewPubKey)
+	ver, err := VerifySignature(newFingerprintToVerify, signedNewFingerprint, recreateNewPubKey)
 	if ver {
 		fmt.Println("Verification of new Key successfull")
 	} else {

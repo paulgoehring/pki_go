@@ -11,8 +11,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	"net/http"
 	"os"
 	"strconv"
@@ -20,6 +22,20 @@ import (
 
 	"github.com/golang-jwt/jwt"
 )
+
+type KeyResponse struct {
+	Keys []PublicKeyInfo `json:"keys"`
+}
+
+type PublicKeyInfo struct {
+	E   string    `json:"e"`
+	Kid string    `json:"kid"`
+	N   string    `json:"n"`
+	Use string    `json:"use"`
+	Kty string    `json:"kty"`
+	Alg string    `json:"alg"`
+	Exp time.Time `json:"exp"`
+}
 
 func GetCertificate(keyPath string, tokenPath string, marbleKeyPath string, marbleCertPath string, certPath string, appID string, initialContact bool) {
 	// keyPath  : the path where the private Key of the client is stored
@@ -131,7 +147,7 @@ func createJwt(privKey *rsa.PrivateKey, fingerprint string, frontEndID string) (
 	return tokenString, nil
 }
 
-func createNewJwt(oldICT []byte, privKey *rsa.PrivateKey, fingerprintOld string, fingerprintNew string,
+func createNewJwt(oldICT []byte, privKey *rsa.PrivateKey, fingerprintNew string,
 	frontEndID string) (string, error) {
 	myClaims := myJWKClaims{
 		KeyType:   "RSA",
@@ -144,7 +160,6 @@ func createNewJwt(oldICT []byte, privKey *rsa.PrivateKey, fingerprintOld string,
 	claims := jwt.MapClaims{
 		"sub":               frontEndID,
 		"iss":               "client",
-		"fingerprintoldkey": fingerprintOld,
 		"fingerprintnewkey": fingerprintNew,
 		"exp":               time.Now().Add(time.Hour * 1).Unix(),
 		"jwk":               myClaims,
@@ -224,19 +239,20 @@ func VerifySignature(token, signature string, publicKey *rsa.PublicKey) (bool, e
 	return true, nil // Verification successful
 }
 
-func RenewCertificate(pathJwt string, certPath string, pathKey string, newKey bool, appID string) {
+func RenewCertificate(pathJwt string, pathKey string, newKey bool, appID string) {
 	// get new challenge
 	// if new key then you need two proof of possession
 	// formulate new jwt, including old jwt
 
-	nonceOldKey, nonceNewKey := GetNewChallenge()
+	nonce := GetNewChallenge()
+	//nonce := GetChallenge()
 
 	fmt.Println("Request Token")
 
 	oldICT, err := os.ReadFile(pathJwt)
 
-	fingerprintOld := nonceOldKey + appID
-	fingerprintNew := nonceNewKey + appID
+	// fingerprintOld := nonceOldKey + appID
+	fingerprintNew := string(nonce) + appID
 	privateKeyOld, err := LoadPrivateKeyFromFile(pathKey)
 	if err != nil {
 		fmt.Println("Error loading private key", err)
@@ -244,10 +260,10 @@ func RenewCertificate(pathJwt string, certPath string, pathKey string, newKey bo
 
 	privateKeyNew := privateKeyOld // create Key Pair if new one requested
 
-	signedTokenOld, err := SignToken(fingerprintOld, privateKeyOld)
-	if err != nil {
-		fmt.Println("Error signing old token", err)
-	}
+	//signedTokenOld, err := SignToken(fingerprintOld, privateKeyOld)
+	//if err != nil {
+	//	fmt.Println("Error signing old token", err)
+	//}
 
 	signedTokenNew, err := SignToken(fingerprintNew, privateKeyNew)
 	if err != nil {
@@ -255,7 +271,7 @@ func RenewCertificate(pathJwt string, certPath string, pathKey string, newKey bo
 	}
 
 	// sign Jwt with old Key to make proof of possession
-	newJwt, err := createNewJwt(oldICT, privateKeyOld, signedTokenOld, signedTokenNew, appID)
+	newJwt, err := createNewJwt(oldICT, privateKeyOld, signedTokenNew, appID)
 	if err != nil {
 		fmt.Println("Error creating JWT token", err)
 	}
@@ -283,13 +299,13 @@ func RenewCertificate(pathJwt string, certPath string, pathKey string, newKey bo
 
 }
 
-func GetNewChallenge() (string, string) {
+func GetNewChallenge() string {
 
 	// TODO Correct IP and port
 	request1, err := http.Get(fmt.Sprintf("http://localhost:8082/getNewChallenge?appID=%v", "asd123"))
 	if err != nil {
 		fmt.Println("Could not reach Server", err)
-		return "", ""
+		return ""
 	}
 	defer request1.Body.Close()
 
@@ -297,19 +313,83 @@ func GetNewChallenge() (string, string) {
 	err = json.NewDecoder(request1.Body).Decode(&data)
 	if err != nil {
 		fmt.Println("Error decoding JSON response:", err)
-		return "", ""
+		return ""
 	}
-	nonceOldKey := data["nonceOldKey"]
+	//nonceOldKey := data["nonceOldKey"]
 	nonceNewKey := data["nonceNewKey"]
-	return nonceOldKey, nonceNewKey
+	return nonceNewKey
 }
 
-func VerifyJwt(pathJwt string, pathRootCert string) {
-	if pathRootCert != "" {
-		// verify key chain, verify token
-	} else {
-		// get key pair from /well-known/ enpoint and verify token
-	}
-	return
+func VerifyICT(pathRootIp string, rootPort string, tokenString string) bool {
+	//token, _ := jwt.Parse(tokenString, nil)
 
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		//resp, err := http.Get(pathRootIp + ":" + rootPort + "/.well-known/certs")
+		resp, err := http.Get("http://localhost:8443/.well-known/certs")
+		if err != nil {
+			return nil, err
+		}
+		defer resp.Body.Close()
+
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, err
+		}
+
+		var jwks = KeyResponse{}
+		err = json.Unmarshal(body, &jwks)
+		if err != nil {
+			return nil, err
+		}
+
+		kid, ok := token.Header["kid"].(string)
+		if !ok {
+			return nil, errors.New("kid field is missing from token or is not a string")
+		}
+
+		var publicKeyKid PublicKeyInfo
+		fmt.Println(jwks)
+		keyFound := false
+		for _, key := range jwks.Keys {
+			if key.Kid == kid {
+				publicKeyKid = key
+				keyFound = true
+				break
+				//rsaPublicKey, err := jwt.ParseRSAPublicKeyFromPEM([]byte(key.N))
+				//if err != nil {
+				//	return nil, err
+				//}
+				//return rsaPublicKey, nil
+			}
+		}
+		if !keyFound {
+			return nil, errors.New("unable to find appropriate key")
+		}
+		//if publicKeyKid == (PublicKeyInfo{}) {
+		//	return nil, errors.New("unable to find appropriate key")
+		//}
+
+		n := new(big.Int)
+		n.SetString(publicKeyKid.N, 10)
+		e := new(big.Int)
+		e.SetString(publicKeyKid.E, 10)
+		recreatePubKey := &rsa.PublicKey{
+			N: n,
+			E: int(e.Int64()),
+		}
+		return recreatePubKey, nil
+	})
+
+	if err != nil {
+		fmt.Println("Error while parsing token: ", err)
+		return false
+	}
+
+	if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
+		fmt.Println("Token is valid. Claims: ", claims)
+		return true
+	} else {
+		fmt.Println("Invalid token")
+		return false
+	}
 }

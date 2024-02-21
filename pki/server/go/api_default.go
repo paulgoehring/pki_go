@@ -165,21 +165,18 @@ func GetNewChallengeGet(w http.ResponseWriter, r *http.Request) {
 	frontendAppID := r.URL.Query().Get("appID")
 
 	nonce1 := GenerateNonce()
-	nonce2 := GenerateNonce()
 
 	if frontendAppID != "" {
 		newRequest := ChallengeObjectRenew{
 			ID:               frontendAppID,
-			NonceTokenOldKey: nonce1,
-			NonceTokenNewKey: nonce2,
+			NonceTokenNewKey: nonce1,
 		}
 
 		challengesRenew[frontendAppID] = newRequest
 
 		// Respond with a JSON containing both nonces
 		response := map[string]string{
-			"nonceOldKey": nonce1,
-			"nonceNewKey": nonce2,
+			"nonceNewKey": nonce1,
 		}
 
 		responseJSON, err := json.Marshal(response)
@@ -564,7 +561,7 @@ func GetChallenge() []byte {
 	defer request1.Body.Close()
 
 	nonceToken, err := io.ReadAll(request1.Body)
-	fmt.Println(fmt.Sprintf("Got Challenge: %v", string(nonceToken)))
+	fmt.Printf(fmt.Sprintf("Got Challenge: %v", string(nonceToken)))
 	return nonceToken
 }
 
@@ -708,11 +705,11 @@ func GetNewTokenGet(w http.ResponseWriter, r *http.Request) {
 		E: int(e22.Int64()),
 	}
 
-	signedOldFingerprint := claims["fingerprintoldkey"].(string)
+	//signedOldFingerprint := claims["fingerprintoldkey"].(string)
 	signedNewFingerprint := claims["fingerprintnewkey"].(string)
 	frontendAppID := claims["sub"].(string)
 
-	oldFingerprintToVerify := challengesRenew[frontendAppID].NonceTokenOldKey + challenges[frontendAppID].ID
+	//oldFingerprintToVerify := challengesRenew[frontendAppID].NonceTokenOldKey + challenges[frontendAppID].ID
 	newFingerprintToVerify := challengesRenew[frontendAppID].NonceTokenNewKey + challenges[frontendAppID].ID
 
 	tokenValid, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
@@ -728,18 +725,18 @@ func GetNewTokenGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ver, err := VerifySignature(oldFingerprintToVerify, signedOldFingerprint, recreateOldPubKey)
-	if ver {
-		fmt.Println("Verification of old Key and ICT successfull")
-	} else {
-		fmt.Println("Unsuccessfull", err)
-		w.WriteHeader(http.StatusUnauthorized)
-		message := "Access Denied: You do not have permission to access this resource."
-		fmt.Fprintln(w, message)
-		return
-	}
+	//ver, err := VerifySignature(oldFingerprintToVerify, signedOldFingerprint, recreateOldPubKey)
+	//if ver {
+	//	fmt.Println("Verification of old Key and ICT successfull")
+	//} else {
+	//	fmt.Println("Unsuccessfull", err)
+	//	w.WriteHeader(http.StatusUnauthorized)
+	//	message := "Access Denied: You do not have permission to access this resource."
+	//	fmt.Fprintln(w, message)
+	//	return
+	//}
 
-	ver, err = VerifySignature(newFingerprintToVerify, signedNewFingerprint, recreateNewPubKey)
+	ver, err := VerifySignature(newFingerprintToVerify, signedNewFingerprint, recreateNewPubKey)
 	if ver {
 		fmt.Println("Verification of new Key successfull")
 	} else {
@@ -762,14 +759,15 @@ func RenewCertificate(pathJwt string, pathKey string, newKey bool, appID string)
 	// if new key then you need two proof of possession
 	// formulate new jwt, including old jwt
 
-	nonceOldKey, nonceNewKey := GetNewChallenge()
+	nonce := GetNewChallenge()
+	//nonce := GetChallenge()
 
 	fmt.Println("Request Token")
 
 	oldICT, err := os.ReadFile(pathJwt)
 
-	fingerprintOld := nonceOldKey + appID
-	fingerprintNew := nonceNewKey + appID
+	// fingerprintOld := nonceOldKey + appID
+	fingerprintNew := string(nonce) + appID
 	privateKeyOld, err := LoadPrivateKeyFromFile(pathKey)
 	if err != nil {
 		fmt.Println("Error loading private key", err)
@@ -777,10 +775,10 @@ func RenewCertificate(pathJwt string, pathKey string, newKey bool, appID string)
 
 	privateKeyNew := privateKeyOld // create Key Pair if new one requested
 
-	signedTokenOld, err := SignToken(fingerprintOld, privateKeyOld)
-	if err != nil {
-		fmt.Println("Error signing old token", err)
-	}
+	//signedTokenOld, err := SignToken(fingerprintOld, privateKeyOld)
+	//if err != nil {
+	//	fmt.Println("Error signing old token", err)
+	//}
 
 	signedTokenNew, err := SignToken(fingerprintNew, privateKeyNew)
 	if err != nil {
@@ -788,7 +786,7 @@ func RenewCertificate(pathJwt string, pathKey string, newKey bool, appID string)
 	}
 
 	// sign Jwt with old Key to make proof of possession
-	newJwt, err := createNewJwt(oldICT, privateKeyOld, signedTokenOld, signedTokenNew, appID)
+	newJwt, err := createNewJwt(oldICT, privateKeyOld, signedTokenNew, appID)
 	if err != nil {
 		fmt.Println("Error creating JWT token", err)
 	}
@@ -816,13 +814,13 @@ func RenewCertificate(pathJwt string, pathKey string, newKey bool, appID string)
 
 }
 
-func GetNewChallenge() (string, string) {
+func GetNewChallenge() string {
 
 	// TODO Correct IP and port
 	request1, err := http.Get(fmt.Sprintf("http://localhost:8443/getNewChallenge?appID=%v", "asd123"))
 	if err != nil {
 		fmt.Println("Could not reach Server", err)
-		return "", ""
+		return ""
 	}
 	defer request1.Body.Close()
 
@@ -830,14 +828,13 @@ func GetNewChallenge() (string, string) {
 	err = json.NewDecoder(request1.Body).Decode(&data)
 	if err != nil {
 		fmt.Println("Error decoding JSON response:", err)
-		return "", ""
+		return ""
 	}
-	nonceOldKey := data["nonceOldKey"]
 	nonceNewKey := data["nonceNewKey"]
-	return nonceOldKey, nonceNewKey
+	return nonceNewKey
 }
 
-func createNewJwt(oldICT []byte, privKey *rsa.PrivateKey, fingerprintOld string, fingerprintNew string,
+func createNewJwt(oldICT []byte, privKey *rsa.PrivateKey, fingerprintNew string,
 	frontEndID string) (string, error) {
 	myClaims := myJWKClaims{
 		KeyType:   "RSA",
@@ -848,9 +845,9 @@ func createNewJwt(oldICT []byte, privKey *rsa.PrivateKey, fingerprintOld string,
 		Modulus:   privKey.PublicKey.N.String(),
 	}
 	claims := jwt.MapClaims{
-		"sub":               frontEndID,
-		"iss":               "client",
-		"fingerprintoldkey": fingerprintOld,
+		"sub": frontEndID,
+		"iss": "client",
+		//"fingerprintoldkey": fingerprintOld,
 		"fingerprintnewkey": fingerprintNew,
 		"exp":               time.Now().Add(time.Hour * 1).Unix(),
 		"jwk":               myClaims,
@@ -865,7 +862,7 @@ func createNewJwt(oldICT []byte, privKey *rsa.PrivateKey, fingerprintOld string,
 }
 
 func VerifyICT(pathRootIp string, rootPort string, tokenString string) bool {
-	token, _ := jwt.Parse(tokenString, nil)
+	//token, _ := jwt.Parse(tokenString, nil)
 
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 		//resp, err := http.Get(pathRootIp + ":" + rootPort + "/.well-known/certs")
@@ -936,5 +933,4 @@ func VerifyICT(pathRootIp string, rootPort string, tokenString string) bool {
 		fmt.Println("Invalid token")
 		return false
 	}
-	//return true
 }

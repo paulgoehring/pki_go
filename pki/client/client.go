@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 
 	client "client/clientutils"
 	myutils "client/myutils"
@@ -16,6 +17,9 @@ var PathOwnCrt string = "clientPKI.crt"
 var PathIdentityToken string = "client.jwt"
 var PathOwnKey string = "private.key"
 
+var PathRootIp = "http://localhost"
+var RootPort = "8443"
+
 // for testing client port 80, pkis port 443, rpkis port 8080
 func main() {
 	// get challenge
@@ -27,7 +31,12 @@ func main() {
 func init() {
 	myutils.CreateKeyPair("private.key")
 	client.GetCertificate("private.key", PathIdentityToken, PathMarbleKey, PathMarbleCrt, PathOwnCrt, "asd123", true)
-	client.RenewCertificate(PathIdentityToken, PathOwnCrt, PathOwnKey, false, "asd123")
+	client.RenewCertificate(PathIdentityToken, PathOwnKey, false, "asd123")
 
-	//client.VerifyJwt()
+	token, err := os.ReadFile(PathIdentityToken)
+	if err != nil {
+		fmt.Println("Error reading JWT file:", err)
+		return
+	}
+	client.VerifyICT(PathRootIp, RootPort, string(token))
 }
