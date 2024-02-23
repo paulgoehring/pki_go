@@ -33,15 +33,12 @@ import (
 
 var PublicKeys []PublicKeyInfo
 var challenges map[string]ChallengeObject
-var tableAppIDs map[string]string
 var PathOwnCrt string = "root.crt"
 var PathMarbleRootCrt string = "marblerunCA.crt"
 var PathServerKey string = "private.key"
 var PathRootCrt string = "root.crt"
 var SerialNumber = big.NewInt(0)
 var AppName string = "RootPkiServer"
-
-var challengesRenew map[string]ChallengeObjectRenew
 
 //maybe load private key and cert here for better performance
 
@@ -86,11 +83,8 @@ func Initialize() {
 	CreateKeyPair("private.key")
 
 	challenges = make(map[string]ChallengeObject)
-	challengesRenew = make(map[string]ChallengeObjectRenew)
-	tableAppIDs = make(map[string]string)
+	challenges = make(map[string]ChallengeObject)
 
-	// TODO: List of valid APP IDs, search in marble cert !!
-	tableAppIDs["asd123"] = "asd123"
 	privateKey, _ := LoadPrivateKeyFromFile("private.key")
 	publicKey := &privateKey.PublicKey
 	// how long own Key Pair is valid
@@ -105,12 +99,10 @@ func Initialize() {
 		Exp: expiration,
 	}
 	PublicKeys = append(PublicKeys, publicKeyData)
-	fmt.Println(PublicKeys)
-	fmt.Println(publicKeyData)
 
 	// create root certificate
-	rootCert := CreateCert(SerialNumber, publicKey, "", "private.key", "RPKI", 1000, "root")
-	//createRootCert("test", "test12", "test123", "test1234", "test12345", "test123456", "ca.crt")
+	rootCert := CreateCert(SerialNumber, publicKey, "", "private.key", AppName, 1000, "root")
+
 	certFile, err := os.Create(PathOwnCrt)
 	if err != nil {
 		fmt.Println(err)
@@ -144,9 +136,15 @@ func CreateCert(SerialNumber *big.Int, pubKey *rsa.PublicKey, signingCertPath st
 		}
 		certDER, err = x509.CreateCertificate(rand.Reader, &certTemplate, signingCert,
 			pubKey, signingKey)
+		if err != nil {
+			fmt.Println("Could not Create Certificate")
+		}
 	} else {
 		certDER, err = x509.CreateCertificate(rand.Reader, &certTemplate, &certTemplate,
 			pubKey, signingKey)
+		if err != nil {
+			fmt.Println("Could not Create Certificate")
+		}
 	}
 
 	SerialNumber.Add(SerialNumber, big.NewInt(1))
@@ -173,12 +171,10 @@ func Generatex509Template(serialNumber *big.Int, subjectName string, validHours 
 			SerialNumber: serialNumber,
 			Subject:      pkix.Name{Organization: []string{subjectName}},
 			NotBefore:    time.Now(),
-			NotAfter:     time.Now().Add(time.Duration(validHours) * time.Hour), // Valid for 10 years
-
-			// do i need key usage fields ?
-			KeyUsage:    x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
-			ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},
-			IsCA:        true,
+			NotAfter:     time.Now().Add(time.Duration(validHours) * time.Hour),
+			KeyUsage:     x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
+			ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},
+			IsCA:         true,
 		}
 		return certTemplate
 	} else if certType == "intermediate" {
@@ -186,7 +182,7 @@ func Generatex509Template(serialNumber *big.Int, subjectName string, validHours 
 			SerialNumber: serialNumber,
 			Subject:      pkix.Name{Organization: []string{subjectName}},
 			NotBefore:    time.Now(),
-			NotAfter:     time.Now().Add(time.Duration(validHours) * time.Hour), // Valid for 10 years
+			NotAfter:     time.Now().Add(time.Duration(validHours) * time.Hour),
 
 			// do i need key usage fields ?
 			KeyUsage:    x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
@@ -199,7 +195,7 @@ func Generatex509Template(serialNumber *big.Int, subjectName string, validHours 
 			SerialNumber: serialNumber,
 			Subject:      pkix.Name{Organization: []string{subjectName}},
 			NotBefore:    time.Now(),
-			NotAfter:     time.Now().Add(time.Duration(validHours) * time.Hour), // Valid for 10 years
+			NotAfter:     time.Now().Add(time.Duration(validHours) * time.Hour),
 		}
 		return certTemplate
 	}
@@ -217,9 +213,6 @@ func WellKnownCertsGet(w http.ResponseWriter, r *http.Request) {
 }
 
 func GetChallengeGet(w http.ResponseWriter, r *http.Request) {
-	// TODO: add query parameter new PubKey
-	// check if appID in marble cert valid
-	// app ID not needed, since coordinator just gives certificates to valid apps
 	if r.Method != http.MethodGet {
 		http.Error(w, "No valid Method", http.StatusMethodNotAllowed)
 		return
@@ -227,31 +220,25 @@ func GetChallengeGet(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("Got Challenge Request")
 
 	frontendAppID := r.URL.Query().Get("appID")
-	// backendAppID := tableAppIDs[frontendAppID]
 
 	nonce := GenerateNonce()
 	if frontendAppID != "" {
-		// maybe check here for valid appid and just give challenges for valid ones
-		// check if valid in marblerun x509, better
 		newRequest := ChallengeObject{
-			// ID: backendAppID,
 			ID:         frontendAppID,
 			NonceToken: nonce,
 		}
-		//fmt.Println(newRequest.ID, newRequest.URL, newRequest.NonceToken)
 		challenges[frontendAppID] = newRequest
 	} else {
 		fmt.Println("value for AppID missing")
 		nonce = "Value for AppID missing"
 	}
-	fmt.Println(fmt.Sprintf("Sent challenge: %v", nonce))
+	fmt.Printf("Sent challenge to: %v \n", frontendAppID)
 
 	w.Header().Set("Content-Type", "text/plain")
 	fmt.Fprint(w, nonce)
 }
 
 func GetTokenGet(w http.ResponseWriter, r *http.Request) {
-	// wrap in correct tls method, check for root stuff,
 	if r.Method != http.MethodGet {
 		http.Error(w, "No valid Method", http.StatusMethodNotAllowed)
 		return
@@ -261,14 +248,10 @@ func GetTokenGet(w http.ResponseWriter, r *http.Request) {
 
 	parsedToken, _ := jwt.Parse(tokenString, nil)
 	privateKey, err := LoadPrivateKeyFromFile("private.key")
+	if err != nil {
+		fmt.Println("Could not load private Key")
+	}
 
-	/*
-		serverCert, err := tls.LoadX509KeyPair(PathServerCrt, PathServerKey)
-		if err != nil {
-			fmt.Println("Error loading server certificate:", err)
-			return
-		}
-	*/
 	caCert, err := os.ReadFile(PathRootCrt)
 	if err != nil {
 		fmt.Println("Error loading CA certificate:", err)
@@ -278,7 +261,7 @@ func GetTokenGet(w http.ResponseWriter, r *http.Request) {
 	caCertPool := x509.NewCertPool()
 	caCertPool.AppendCertsFromPEM(caCert)
 
-	// on Marblerun Certificates check additional if they are
+	// check if used certificate is issued by marblerun and
 	// issued in last 5 min since they do not expire
 	marblerunCACert, err := os.ReadFile(PathMarbleRootCrt)
 	if err != nil {
@@ -291,7 +274,6 @@ func GetTokenGet(w http.ResponseWriter, r *http.Request) {
 
 	claims, ok := parsedToken.Claims.(jwt.MapClaims)
 	if !ok {
-		// handle invalid claims ?
 		fmt.Println("Invalid JWT claims")
 		return
 	}
@@ -310,23 +292,28 @@ func GetTokenGet(w http.ResponseWriter, r *http.Request) {
 		N: n2,
 		E: int(e2.Int64()),
 	}
-	publicKeyPEM22 := &pem.Block{
-		Type:  "RSCreateJwtA PUBLIC KEY",
-		Bytes: x509.MarshalPKCS1PublicKey(recreatePubKey),
-	}
-	fmt.Println("\nPublic Key in PEM Format:")
-	publicKeyString := string(pem.EncodeToMemory(publicKeyPEM22))
-	fmt.Println(publicKeyString)
+	/*
+		// To Debug show Public Key
+		publicKeyPEM22 := &pem.Block{
+			Type:  "RSCreateJwtA PUBLIC KEY",
+			Bytes: x509.MarshalPKCS1PublicKey(recreatePubKey),
+		}
+		fmt.Println("\nPublic Key in PEM Format:")
+		publicKeyString := string(pem.EncodeToMemory(publicKeyPEM22))
+		fmt.Println(publicKeyString)
+	*/
 
 	signedFingerprint := claims["fingerprint"].(string)
 	frontendAppID := claims["sub"].(string)
 
 	fingerprintToVerify := challenges[frontendAppID].NonceToken + challenges[frontendAppID].ID
+	fmt.Println(challenges)
 
-	// here check if nonce + appID correct, every nonce needs a number for map i guess, after delete from data structure
+	// here check if signed nonce + appID correct, after delete from data structure for further requests
 	ver, err := VerifySignature(fingerprintToVerify, signedFingerprint, recreatePubKey)
 	if ver {
 		fmt.Println("Verification successfull")
+		delete(challenges, frontendAppID)
 	} else {
 		fmt.Println("Unsuccessfull", err)
 		w.WriteHeader(http.StatusUnauthorized)
@@ -335,14 +322,13 @@ func GetTokenGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	newJwt, newValidJwt := CreateJwt(privateKey, frontendAppID, recreatePubKey)
+	newJwt, newValidJwt := CreateJwt(privateKey, frontendAppID, recreatePubKey, frontendAppID)
 
 	w.Header().Set("Content-Type", "application/json")
 	fmt.Fprint(w, newJwt)
 
+	// add Server Public Key to intermediate Public Keys
 	PublicKeys = append(PublicKeys, newValidJwt)
-
-	// Now give back jwt signed by server as response, validate at rpki endpoint at the end
 }
 
 func GetKeyDataByKid(w http.ResponseWriter, kid string) {
@@ -375,7 +361,7 @@ func LoadPrivateKeyFromFile(filename string) (*rsa.PrivateKey, error) {
 
 func ShowCerts(w http.ResponseWriter) {
 
-	// give out all valid stuff
+	// give out all valid public Keys
 	response := KeyResponse{Keys: PublicKeys}
 
 	jsonResponse, err := json.MarshalIndent(response, "", "  ")
@@ -407,7 +393,6 @@ func CreateKeyPair(keyPath string) {
 		return
 	}
 
-	// TODO: store private key securely
 	privateKeyPem := &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(privateKey)}
 	err = os.WriteFile(keyPath, pem.EncodeToMemory(privateKeyPem), 0644)
 	if err != nil {
@@ -430,7 +415,7 @@ func GenerateKIDFromPublicKey(publicKey *rsa.PublicKey) string {
 }
 
 func CreateJwt(privKey *rsa.PrivateKey, frontEndID string,
-	publicKey *rsa.PublicKey) (string, PublicKeyInfo) {
+	publicKey *rsa.PublicKey, issuerName string) (string, PublicKeyInfo) {
 
 	iat := time.Now()
 	expiration := iat.Add(time.Hour * 1)
@@ -444,7 +429,7 @@ func CreateJwt(privKey *rsa.PrivateKey, frontEndID string,
 	}
 	claims := jwt.MapClaims{
 		"sub": frontEndID,
-		"iss": "server",
+		"iss": issuerName,
 		"kid": GenerateKIDFromPublicKey(&privKey.PublicKey), // delete here later
 		"iat": iat.Unix(),                                   // maybe without Unix?
 		"exp": expiration.Unix(),                            // maybe without unix
@@ -474,9 +459,8 @@ func CreateJwt(privKey *rsa.PrivateKey, frontEndID string,
 }
 
 func GiveKeyJwt(privKey *rsa.PrivateKey, pubKey PublicKeyInfo) string {
-	// give out specific Jwt
+	// create Jwt for a specific Key
 	claims := jwt.MapClaims{
-
 		"e":   pubKey.E,
 		"kid": pubKey.Kid,
 		"n":   pubKey.N,
@@ -510,119 +494,20 @@ func VerifySignature(token, signature string, publicKey *rsa.PublicKey) (bool, e
 	return true, nil // Verification successful
 }
 
-/*
-func ServerCreateJwt(privKey *rsa.PrivateKey, frontEndID string, publicKey *rsa.PublicKey) string {
-	// add Certchain and certificate in header? check which create JWT is needed
-	myClaims := myJWKClaims{
-		KeyType:   "RSA",
-		Usage:     "sig",
-		KeyID:     GenerateKIDFromPublicKey(publicKey), // here maybe hash of the key idk how this works
-		Algorithm: "RS256",
-		Exponent:  strconv.Itoa(publicKey.E),
-		Modulus:   publicKey.N.String(),
-	}
-	claims := jwt.MapClaims{
-		"sub": frontEndID,
-		"iss": "server",
-		"kid": GenerateKIDFromPublicKey(&privKey.PublicKey),
-		"exp": time.Now().Add(time.Hour * 1).Unix(),
-		"jwk": myClaims,
-	}
-	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
-	tokenString, err := token.SignedString(privKey)
-	if err != nil {
-		return ""
-	}
-	return tokenString
-}
-*/
-
 func GenerateNonce() string {
-	// TODO check if in nonce map
 	nonceBytes := make([]byte, 32)
 	_, err := rand.Read(nonceBytes)
 	if err != nil {
 		fmt.Println("Nonce could not be generated", err)
 	}
 	nonce := base64.StdEncoding.EncodeToString(nonceBytes)
-	//fmt.Println(nonce)
 	return nonce
 }
 
-/*
-func ApplyMTLSConfig(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var tlsConfig *tls.Config
-
-		ownCert, err := tls.LoadX509KeyPair(PathOwnCrt, PathServerKey)
-		if err != nil {
-			fmt.Println("Error Loading Server cert", err)
-			return
-		}
-
-		caCert, err := os.ReadFile(PathRootCrt)
-		// for Root PKI Same
-		if err != nil {
-			fmt.Println("Error loading CA certificate:", err)
-			return
-		}
-
-		marbleCert, err := os.ReadFile(PathMarbleRootCrt)
-		if err != nil {
-			fmt.Println("Error loading marble root certificate:", err)
-			return
-		}
-
-		caCertPool := x509.NewCertPool()
-		caCertPool.AppendCertsFromPEM(caCert)
-
-		marbleCaCertPool := x509.NewCertPool()
-		marbleCaCertPool.AppendCertsFromPEM(marbleCert)
-
-		// Check if the "renew" query parameter is present
-		if r.URL.Query().Get("renew") == "true" {
-			// Apply a custom mTLS configuration for renewal
-			fmt.Println("Applying custom mTLS configuration for renewal")
-			// Configure TLS for renewal...
-			tlsConfig = &tls.Config{
-				Certificates: []tls.Certificate{ownCert},
-				ClientAuth: tls.RequireAndVerifyClientCert,
-				ClientCAs: caCertPool,
-			}
-		} else {
-			// Apply the default mTLS configuration
-			fmt.Println("Applying default mTLS configuration")
-			// Configure default TLS...
-			tlsConfig = &tls.Config{
-				Certificates: []tls.Certificate{ownCert},
-				ClientAuth:   tls.RequireAndVerifyClientCert,
-				ClientCAs:    marbleCaCertPool,
-				VerifyPeerCertificate: func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
-					// Perform additional checks on the client certificate
-					for _, chain := range verifiedChains {
-						for _, cert := range chain {
-							// Check if the "iat" field is not older than 5 minutes ago
-							iat := cert.NotBefore
-							maxAge := 5 * time.Minute
-							if time.Since(iat) > maxAge {
-								return fmt.Errorf("client certificate is too old (issued more than 5 minutes ago)")
-							}
-						}
-					}
-					return nil
-				},
-			}
-
-		}
-		r.TLSConfig = tlsConfig
-
-		// Call the next handler in the chain
-		next.ServeHTTP(w, r)
-	})
-
-} */
-
 func DefineTLSConfig() *tls.Config {
+	// define TLS Config for Server Side
+	// Check if Client has a valid Marblerun Certificate which was
+	// issued in the last 5 minutes
 	var tlsConfig *tls.Config
 
 	ownCert, err := tls.LoadX509KeyPair(PathOwnCrt, PathServerKey)
@@ -659,64 +544,15 @@ func DefineTLSConfig() *tls.Config {
 					// Check if the "iat" field is not older than 5 minutes ago
 					iat := cert.NotBefore
 					maxAge := 10000 * time.Minute // change to 5 later
-
-					// Perform the additional check only if one of the specified root CAs is used
-					//if cert.Issuer.CommonName == "Marblerun Coordinator" {
 					if time.Since(iat) > maxAge {
 						return fmt.Errorf("client certificate is too old (issued more than 5 minutes ago)")
 					}
-					//}
 				}
 			}
 			return nil
 		},
 	}
 	return tlsConfig
-
-}
-
-func GetChallengeRenewGet(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "No valid Method", http.StatusMethodNotAllowed)
-		return
-	}
-	fmt.Println("Got Challenge Request")
-
-	frontendAppID := r.URL.Query().Get("appID")
-
-	nonce1 := GenerateNonce()
-	nonce2 := GenerateNonce()
-
-	if frontendAppID != "" {
-		newRequest := ChallengeObjectRenew{
-			ID:               frontendAppID,
-			NonceTokenOldKey: nonce1,
-			NonceTokenNewKey: nonce2,
-		}
-
-		challengesRenew[frontendAppID] = newRequest
-
-		// Respond with a JSON containing both nonces
-		response := map[string]string{
-			"nonce1": nonce1,
-			"nonce2": nonce2,
-		}
-
-		responseJSON, err := json.Marshal(response)
-		if err != nil {
-			http.Error(w, "Error encoding JSON response", http.StatusInternalServerError)
-			return
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(responseJSON)
-		return
-	}
-	fmt.Println("value for AppID missing")
-	nonce := "Value for AppID missing"
-
-	w.Header().Set("Content-Type", "text/plain")
-	fmt.Fprint(w, nonce)
 }
 
 func GetNewChallengeGet(w http.ResponseWriter, r *http.Request) {
@@ -731,12 +567,12 @@ func GetNewChallengeGet(w http.ResponseWriter, r *http.Request) {
 	nonce1 := GenerateNonce()
 
 	if frontendAppID != "" {
-		newRequest := ChallengeObjectRenew{
-			ID:               frontendAppID,
-			NonceTokenNewKey: nonce1,
+		newRequest := ChallengeObject{
+			ID:         frontendAppID,
+			NonceToken: nonce1,
 		}
 
-		challengesRenew[frontendAppID] = newRequest
+		challenges[frontendAppID] = newRequest
 
 		// Respond with a JSON containing both nonces
 		response := map[string]string{
@@ -762,9 +598,7 @@ func GetNewChallengeGet(w http.ResponseWriter, r *http.Request) {
 }
 
 func GetNewTokenGet(w http.ResponseWriter, r *http.Request) {
-	// TODO: add query parameter new PubKey
-	// check if appID in marble cert valid
-	// app ID not needed, since coordinator just gives certificates to valid apps
+
 	if r.Method != http.MethodGet {
 		http.Error(w, "No valid Method", http.StatusMethodNotAllowed)
 		return
@@ -776,10 +610,12 @@ func GetNewTokenGet(w http.ResponseWriter, r *http.Request) {
 	parsedToken, _ := jwt.Parse(tokenString, nil)
 
 	privateKey, err := LoadPrivateKeyFromFile("private.key")
+	if err != nil {
+		fmt.Println("Could not load private Key")
+	}
 
 	claims, ok := parsedToken.Claims.(jwt.MapClaims)
 	if !ok {
-		// handle invalid claims ?
 		fmt.Println("Invalid JWT claims")
 		return
 	}
@@ -799,15 +635,13 @@ func GetNewTokenGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	parsedIct, err := jwt.Parse(oldIct, nil)
+	parsedIct, _ := jwt.Parse(oldIct, nil)
 
 	ictClaims, ok := parsedIct.Claims.(jwt.MapClaims)
 	if !ok {
 		fmt.Println("Invalid JWT claims")
 		return
 	}
-
-	fmt.Println("OldICT:   " + parsedIct.Raw)
 
 	oldPublicKeyData := ictClaims["jwk"].(map[string]interface{})
 	n1, _ := oldPublicKeyData["n"].(string)
@@ -839,18 +673,15 @@ func GetNewTokenGet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// check if token got signed by old key for verify old key
-	// first sign the token with old key
-	// signedOldFingerprint := claims["fingerprintoldkey"].(string)
 	signedNewFingerprint := claims["fingerprintnewkey"].(string)
 	frontendAppID := claims["sub"].(string)
 
-	//oldFingerprintToVerify := challengesRenew[frontendAppID].NonceTokenOldKey + challenges[frontendAppID].ID
-	newFingerprintToVerify := challengesRenew[frontendAppID].NonceTokenNewKey + challenges[frontendAppID].ID
+	newFingerprintToVerify := challenges[frontendAppID].NonceToken + challenges[frontendAppID].ID
 
 	tokenValid, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 		return recreateOldPubKey, nil
 	})
-
+	fmt.Println(challenges)
 	if err == nil && tokenValid.Valid {
 		fmt.Println("JWT is valid.")
 	} else {
@@ -860,17 +691,6 @@ func GetNewTokenGet(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintln(w, message)
 		return
 	}
-
-	//ver, err := VerifySignature(oldFingerprintToVerify, signedOldFingerprint, recreateOldPubKey)
-	//if ver {
-	//	fmt.Println("Verification of old Key and ICT successfull")
-	//} else {
-	//	fmt.Println("Unsuccessfull", err)
-	//	w.WriteHeader(http.StatusUnauthorized)
-	//	message := "Access Denied: You do not have permission to access this resource."
-	//	fmt.Fprintln(w, message)
-	//	return
-	//}
 
 	ver, err := VerifySignature(newFingerprintToVerify, signedNewFingerprint, recreateNewPubKey)
 	if ver {
@@ -883,7 +703,7 @@ func GetNewTokenGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	newJwt, newValidJwt := CreateJwt(privateKey, frontendAppID, recreateNewPubKey)
+	newJwt, newValidJwt := CreateJwt(privateKey, frontendAppID, recreateNewPubKey, frontendAppID)
 
 	w.Header().Set("Content-Type", "application/json")
 	fmt.Fprint(w, newJwt)
@@ -914,19 +734,21 @@ func DeleteKeyByKid(keys []PublicKeyInfo, kidToDelete string) []PublicKeyInfo {
 func VerifyICT(pubKey *rsa.PublicKey, tokenString string) (bool, error) {
 
 	token, _ := jwt.Parse(tokenString, nil)
-	claims, ok := token.Claims.(jwt.MapClaims)
+
+	kid, ok := token.Header["kid"].(string)
+	fmt.Println(kid)
 	if !ok {
-		fmt.Println("Invalid Claims")
+		fmt.Println("Kid field is missing in token header or is not a string")
+		return false, nil
 	}
 
 	// search publicKey in  Show Cert, root PKI can just look it up
-	// try get x509 cert
 	// get signer kid from jwt
 	// recreate PublicKey
 	// verify
 	var publicKeyKid PublicKeyInfo
 	for _, key := range PublicKeys {
-		if key.Kid == claims["kid"] {
+		if key.Kid == kid {
 			publicKeyKid = key
 		}
 	}

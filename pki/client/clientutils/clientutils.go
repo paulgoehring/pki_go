@@ -1,6 +1,7 @@
 package clientutils
 
 import (
+	myutils "client/myutils"
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
@@ -14,8 +15,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"math/big"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"time"
@@ -37,19 +40,15 @@ type PublicKeyInfo struct {
 	Exp time.Time `json:"exp"`
 }
 
-func GetCertificate(keyPath string, tokenPath string, marbleKeyPath string, marbleCertPath string, certPath string, appID string, initialContact bool) {
+func GetCertificate(keyPath string, tokenPath string, marbleKeyPath string, marbleCertPath string, appID string,
+	serverIp string, serverPort string) {
 	// keyPath  : the path where the private Key of the client is stored
 	// tokenPath: the path where the workload identity token(jwt) should be stored
 	// marbleKeyPath:
 	// marbleCertPath: the path where the marblerun certificate for the initial
 	//            	   mtls connection is stored
-	// certPath : the path where the own x.509 Certificate should be stored
-	// initialContact : the marblerun Certificate gets used in the initial contact for
-	//                  authentication and the old Workload Identity Token afterwards
-	//                  Make sure to request a new Workload Identity Token BEFORE the old
-	//                  expires
 	mtlsConfig := DefineClientTLSConfig(marbleCertPath, marbleKeyPath)
-	nonceToken := GetChallenge(mtlsConfig)
+	nonceToken := GetChallenge(mtlsConfig, serverIp, serverPort, appID)
 	challenge := string(nonceToken)
 
 	fmt.Println("Request Token")
@@ -76,8 +75,8 @@ func GetCertificate(keyPath string, tokenPath string, marbleKeyPath string, marb
 			TLSClientConfig: mtlsConfig,
 		},
 	}
-
-	req, err := http.NewRequest("GET", "https://localhost:8081/getCert", nil)
+	url := fmt.Sprintf("https://%v:%v/getCert", serverIp, serverPort)
+	req, err := http.NewRequest("GET", url, nil)
 	req.Header.Set("Authorization", "Bearer "+newJwt)
 
 	resp, err := client.Do(req)
@@ -173,13 +172,23 @@ func createNewJwt(oldICT []byte, privKey *rsa.PrivateKey, fingerprintNew string,
 	return tokenString, nil
 }
 
-func GetChallenge(tlsConfiguration *tls.Config) []byte {
+func GetChallenge(tlsConfiguration *tls.Config, serverIp string,
+	serverPort string, appID string) []byte {
+
 	client := http.Client{
 		Transport: &http.Transport{
 			TLSClientConfig: tlsConfiguration,
 		},
 	}
-	request1, err := client.Get(fmt.Sprintf("https://localhost:8081/getChallenge?appID=%v", "asd123"))
+	u, err := url.Parse(fmt.Sprintf("https://%s:%s/getChallenge", serverIp, serverPort))
+	if err != nil {
+		log.Fatal(err)
+	}
+	q := u.Query()
+	q.Set("appID", appID)
+	u.RawQuery = q.Encode()
+
+	request1, err := client.Get(u.String())
 	if err != nil {
 		fmt.Println("Could not reach Server", err)
 		return nil
@@ -239,31 +248,38 @@ func VerifySignature(token, signature string, publicKey *rsa.PublicKey) (bool, e
 	return true, nil // Verification successful
 }
 
-func RenewCertificate(pathJwt string, pathKey string, newKey bool, appID string) {
+func RenewCertificate(serverIp string, serverPort string, pathJwt string, pathKey string, appID string, newKey bool) {
 	// get new challenge
 	// if new key then you need two proof of possession
 	// formulate new jwt, including old jwt
 
-	nonce := GetNewChallenge()
-	//nonce := GetChallenge()
+	nonce := GetNewChallenge(serverIp, serverPort, appID)
 
 	fmt.Println("Request Token")
 
 	oldICT, err := os.ReadFile(pathJwt)
+	if err != nil {
+		fmt.Println("Error reading JWT file:", err)
+		return
+	}
 
-	// fingerprintOld := nonceOldKey + appID
 	fingerprintNew := string(nonce) + appID
 	privateKeyOld, err := LoadPrivateKeyFromFile(pathKey)
 	if err != nil {
 		fmt.Println("Error loading private key", err)
 	}
 
-	privateKeyNew := privateKeyOld // create Key Pair if new one requested
-
-	//signedTokenOld, err := SignToken(fingerprintOld, privateKeyOld)
-	//if err != nil {
-	//	fmt.Println("Error signing old token", err)
-	//}
+	var privateKeyNew *rsa.PrivateKey
+	if newKey {
+		// create new key pair
+		myutils.CreateKeyPair(pathKey)
+		privateKeyNew, err = LoadPrivateKeyFromFile(pathKey)
+		if err != nil {
+			fmt.Println("Error loading private key", err)
+		}
+	} else {
+		privateKeyNew = privateKeyOld
+	}
 
 	signedTokenNew, err := SignToken(fingerprintNew, privateKeyNew)
 	if err != nil {
@@ -279,7 +295,8 @@ func RenewCertificate(pathJwt string, pathKey string, newKey bool, appID string)
 	client := &http.Client{
 		Transport: &http.Transport{},
 	}
-	req, err := http.NewRequest("GET", "http://localhost:8082/getNewCert", nil)
+	serverUrl := fmt.Sprintf("http://%v:%v/getNewCert", serverIp, serverPort)
+	req, err := http.NewRequest("GET", serverUrl, nil)
 	req.Header.Set("Authorization", "Bearer "+newJwt)
 
 	resp, err := client.Do(req)
@@ -299,10 +316,19 @@ func RenewCertificate(pathJwt string, pathKey string, newKey bool, appID string)
 
 }
 
-func GetNewChallenge() string {
+func GetNewChallenge(serverIp string, serverPort string, appID string) string {
 
 	// TODO Correct IP and port
-	request1, err := http.Get(fmt.Sprintf("http://localhost:8082/getNewChallenge?appID=%v", "asd123"))
+	u, err := url.Parse(fmt.Sprintf("http://%s:%s/getNewChallenge", serverIp, serverPort))
+	if err != nil {
+		fmt.Println("Could not parse URL", err)
+		return ""
+	}
+	q := u.Query()
+	q.Set("appID", appID)
+	u.RawQuery = q.Encode()
+
+	request1, err := http.Get(u.String())
 	if err != nil {
 		fmt.Println("Could not reach Server", err)
 		return ""
