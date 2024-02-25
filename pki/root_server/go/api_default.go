@@ -48,12 +48,6 @@ type ChallengeObject struct {
 	NonceToken string
 }
 
-type ChallengeObjectRenew struct {
-	ID               string
-	NonceTokenOldKey string
-	NonceTokenNewKey string
-}
-
 type PublicKeyInfo struct {
 	E   string    `json:"e"`
 	Kid string    `json:"kid"`
@@ -78,14 +72,16 @@ type myJWKClaims struct {
 }
 
 func Initialize() {
-	//nonceTokens = make(map[string]int)
+	// Initializing Data structures, creating Key Pairs
+	// and Certificates
+
 	// create key pair
-	CreateKeyPair("private.key")
+	CreateKeyPair(PathServerKey)
 
 	challenges = make(map[string]ChallengeObject)
 	challenges = make(map[string]ChallengeObject)
 
-	privateKey, _ := LoadPrivateKeyFromFile("private.key")
+	privateKey, _ := LoadPrivateKeyFromFile(PathServerKey)
 	publicKey := &privateKey.PublicKey
 	// how long own Key Pair is valid
 	expiration := time.Now().Add(time.Hour * 8760)
@@ -101,7 +97,7 @@ func Initialize() {
 	PublicKeys = append(PublicKeys, publicKeyData)
 
 	// create root certificate
-	rootCert := CreateCert(SerialNumber, publicKey, "", "private.key", AppName, 1000, "root")
+	rootCert := CreateCert(SerialNumber, publicKey, "", PathServerKey, AppName, 1000, "root")
 
 	certFile, err := os.Create(PathOwnCrt)
 	if err != nil {
@@ -117,6 +113,7 @@ func Initialize() {
 
 func CreateCert(SerialNumber *big.Int, pubKey *rsa.PublicKey, signingCertPath string,
 	signingKeyPath string, issuedName string, validHours int, certType string) []byte {
+	// Creates a x.509 Certificate
 
 	certTemplate := Generatex509Template(SerialNumber, issuedName, validHours, certType)
 	var signingCert *x509.Certificate
@@ -152,6 +149,7 @@ func CreateCert(SerialNumber *big.Int, pubKey *rsa.PublicKey, signingCertPath st
 }
 
 func parseCertificatePEM(certPEM []byte) (*x509.Certificate, error) {
+	// parse a x.509 Certificate from a PEM file
 	block, _ := pem.Decode(certPEM)
 	if block == nil || block.Type != "CERTIFICATE" {
 		return nil, fmt.Errorf("failed to decode PEM block containing certificate")
@@ -166,6 +164,7 @@ func parseCertificatePEM(certPEM []byte) (*x509.Certificate, error) {
 }
 
 func Generatex509Template(serialNumber *big.Int, subjectName string, validHours int, certType string) x509.Certificate {
+	// Generates a x.509 Certificate Template
 	if certType == "root" {
 		certTemplate := x509.Certificate{
 			SerialNumber: serialNumber,
@@ -202,9 +201,11 @@ func Generatex509Template(serialNumber *big.Int, subjectName string, validHours 
 }
 
 func WellKnownCertsGet(w http.ResponseWriter, r *http.Request) {
+	// Get all valid public keys or a specific key by kid
+	// if kid is given in the request
 	PublicKeys = DeleteExpiredCerts(PublicKeys)
 	keyID := r.URL.Query().Get("kid")
-	fmt.Println(keyID)
+
 	if keyID != "" {
 		GetKeyDataByKid(w, keyID)
 	} else {
@@ -213,6 +214,7 @@ func WellKnownCertsGet(w http.ResponseWriter, r *http.Request) {
 }
 
 func GetChallengeGet(w http.ResponseWriter, r *http.Request) {
+	// Get a challenge for a specific AppID and send it to the client
 	if r.Method != http.MethodGet {
 		http.Error(w, "No valid Method", http.StatusMethodNotAllowed)
 		return
@@ -239,6 +241,8 @@ func GetChallengeGet(w http.ResponseWriter, r *http.Request) {
 }
 
 func GetTokenGet(w http.ResponseWriter, r *http.Request) {
+	// Get a new token for a specific AppID and send it to the client
+	// if the client could be authenticated by the marblerun certificate
 	if r.Method != http.MethodGet {
 		http.Error(w, "No valid Method", http.StatusMethodNotAllowed)
 		return
@@ -247,7 +251,7 @@ func GetTokenGet(w http.ResponseWriter, r *http.Request) {
 	tokenString := r.Header.Get("Authorization")[7:]
 
 	parsedToken, _ := jwt.Parse(tokenString, nil)
-	privateKey, err := LoadPrivateKeyFromFile("private.key")
+	privateKey, err := LoadPrivateKeyFromFile(PathServerKey)
 	if err != nil {
 		fmt.Println("Could not load private Key")
 	}
@@ -307,7 +311,6 @@ func GetTokenGet(w http.ResponseWriter, r *http.Request) {
 	frontendAppID := claims["sub"].(string)
 
 	fingerprintToVerify := challenges[frontendAppID].NonceToken + challenges[frontendAppID].ID
-	fmt.Println(challenges)
 
 	// here check if signed nonce + appID correct, after delete from data structure for further requests
 	ver, err := VerifySignature(fingerprintToVerify, signedFingerprint, recreatePubKey)
@@ -327,12 +330,13 @@ func GetTokenGet(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	fmt.Fprint(w, newJwt)
 
-	// add Server Public Key to intermediate Public Keys
+	// add Server Public Key to intermediate Public Keys which are valid to sign Tokens
 	PublicKeys = append(PublicKeys, newValidJwt)
 }
 
 func GetKeyDataByKid(w http.ResponseWriter, kid string) {
-	privateKey, err := LoadPrivateKeyFromFile("private.key")
+	// Get a specific public key by kid and send it to the client
+	privateKey, err := LoadPrivateKeyFromFile(PathServerKey)
 	if err != nil {
 		fmt.Println("Could not load private Key")
 	}
@@ -346,6 +350,7 @@ func GetKeyDataByKid(w http.ResponseWriter, kid string) {
 }
 
 func LoadPrivateKeyFromFile(filename string) (*rsa.PrivateKey, error) {
+	// Load a private key from a file
 	keyFile, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, err
@@ -360,7 +365,6 @@ func LoadPrivateKeyFromFile(filename string) (*rsa.PrivateKey, error) {
 }
 
 func ShowCerts(w http.ResponseWriter) {
-
 	// give out all valid public Keys
 	response := KeyResponse{Keys: PublicKeys}
 
@@ -375,6 +379,7 @@ func ShowCerts(w http.ResponseWriter) {
 }
 
 func DeleteExpiredCerts(keys []PublicKeyInfo) []PublicKeyInfo {
+	// Delete all expired public keys
 	currentTime := time.Now()
 	var validKeys []PublicKeyInfo
 	for _, key := range keys {
@@ -409,6 +414,7 @@ func CreateKeyPair(keyPath string) {
 }
 
 func GenerateKIDFromPublicKey(publicKey *rsa.PublicKey) string {
+	// Generate a Key ID from a public key
 	hash := sha256.Sum256(publicKey.N.Bytes())
 	kid := hex.EncodeToString(hash[:])
 	return kid
@@ -416,6 +422,7 @@ func GenerateKIDFromPublicKey(publicKey *rsa.PublicKey) string {
 
 func CreateJwt(privKey *rsa.PrivateKey, frontEndID string,
 	publicKey *rsa.PublicKey, issuerName string) (string, PublicKeyInfo) {
+	// Create a JWT for a specific AppID
 
 	iat := time.Now()
 	expiration := iat.Add(time.Hour * 1)
@@ -430,9 +437,8 @@ func CreateJwt(privKey *rsa.PrivateKey, frontEndID string,
 	claims := jwt.MapClaims{
 		"sub": frontEndID,
 		"iss": issuerName,
-		"kid": GenerateKIDFromPublicKey(&privKey.PublicKey), // delete here later
-		"iat": iat.Unix(),                                   // maybe without Unix?
-		"exp": expiration.Unix(),                            // maybe without unix
+		"iat": iat.Unix(),
+		"exp": expiration.Unix(),
 		"jwk": myClaims,
 	}
 	header := jwt.MapClaims{
@@ -480,6 +486,9 @@ func GiveKeyJwt(privKey *rsa.PrivateKey, pubKey PublicKeyInfo) string {
 }
 
 func VerifySignature(token, signature string, publicKey *rsa.PublicKey) (bool, error) {
+
+	// Verify a signature for a specific token
+
 	decodedSignature, err := base64.StdEncoding.DecodeString(signature)
 	if err != nil {
 		return false, err
@@ -490,11 +499,12 @@ func VerifySignature(token, signature string, publicKey *rsa.PublicKey) (bool, e
 	if err != nil {
 		return false, nil // Verification failed
 	}
-	//fmt.Println(token, signature, decodedSignature, hashed)
+
 	return true, nil // Verification successful
 }
 
 func GenerateNonce() string {
+	// Generate a random nonce
 	nonceBytes := make([]byte, 32)
 	_, err := rand.Read(nonceBytes)
 	if err != nil {
@@ -556,6 +566,7 @@ func DefineTLSConfig() *tls.Config {
 }
 
 func GetNewChallengeGet(w http.ResponseWriter, r *http.Request) {
+	// Get a new challenge for a specific AppID and send it to the client
 	if r.Method != http.MethodGet {
 		http.Error(w, "No valid Method", http.StatusMethodNotAllowed)
 		return
@@ -598,6 +609,8 @@ func GetNewChallengeGet(w http.ResponseWriter, r *http.Request) {
 }
 
 func GetNewTokenGet(w http.ResponseWriter, r *http.Request) {
+	// Get a new token for a specific AppID and send it to the client
+	// after it has been authenticated with the old token
 
 	if r.Method != http.MethodGet {
 		http.Error(w, "No valid Method", http.StatusMethodNotAllowed)
@@ -609,7 +622,7 @@ func GetNewTokenGet(w http.ResponseWriter, r *http.Request) {
 
 	parsedToken, _ := jwt.Parse(tokenString, nil)
 
-	privateKey, err := LoadPrivateKeyFromFile("private.key")
+	privateKey, err := LoadPrivateKeyFromFile(PathServerKey)
 	if err != nil {
 		fmt.Println("Could not load private Key")
 	}
@@ -681,7 +694,7 @@ func GetNewTokenGet(w http.ResponseWriter, r *http.Request) {
 	tokenValid, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 		return recreateOldPubKey, nil
 	})
-	fmt.Println(challenges)
+
 	if err == nil && tokenValid.Valid {
 		fmt.Println("JWT is valid.")
 	} else {
@@ -719,6 +732,9 @@ func GetNewTokenGet(w http.ResponseWriter, r *http.Request) {
 }
 
 func DeleteKeyByKid(keys []PublicKeyInfo, kidToDelete string) []PublicKeyInfo {
+
+	// Delete a specific public key by kid
+
 	var updatedKeys []PublicKeyInfo
 
 	for _, key := range keys {
@@ -736,7 +752,7 @@ func VerifyICT(pubKey *rsa.PublicKey, tokenString string) (bool, error) {
 	token, _ := jwt.Parse(tokenString, nil)
 
 	kid, ok := token.Header["kid"].(string)
-	fmt.Println(kid)
+
 	if !ok {
 		fmt.Println("Kid field is missing in token header or is not a string")
 		return false, nil

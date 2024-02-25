@@ -51,7 +51,7 @@ func GetCertificate(keyPath string, tokenPath string, marbleKeyPath string, marb
 	nonceToken := GetChallenge(mtlsConfig, serverIp, serverPort, appID)
 	challenge := string(nonceToken)
 
-	fmt.Println("Request Token")
+	fmt.Println("Requesting Workload Identity Token")
 
 	fingerprint := challenge + appID
 	privateKey, err := LoadPrivateKeyFromFile(keyPath)
@@ -68,7 +68,6 @@ func GetCertificate(keyPath string, tokenPath string, marbleKeyPath string, marb
 	if err != nil {
 		fmt.Println("Error creating JWT token", err)
 	}
-	fmt.Println(newJwt)
 
 	client := &http.Client{
 		Transport: &http.Transport{
@@ -86,14 +85,51 @@ func GetCertificate(keyPath string, tokenPath string, marbleKeyPath string, marb
 	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)
 
-	fmt.Println("Response: ")
-	fmt.Println(string(body))
-
 	err = os.WriteFile(tokenPath, body, 0644)
 	if err != nil {
 		fmt.Println("JWT could not be stored", err)
 	}
 
+	fmt.Println("Successfully received Workload Identity Token")
+
+}
+
+func CheckTokenExpirationPeriodically(jwtFilePath string, ipServer string, portServerInsecure string, pathJWT string, pathOwnKey string, appName string, newKey bool) {
+	// checks if the JWT is about to expire and renews it if necessary
+	for {
+		// Read the JWT from the file
+		jwtBytes, err := os.ReadFile(jwtFilePath)
+		if err != nil {
+			fmt.Println("Error reading JWT file:", err)
+			return
+		}
+
+		// Parse the JWT token
+		token, _, err := new(jwt.Parser).ParseUnverified(string(jwtBytes), jwt.MapClaims{})
+		if err != nil {
+			fmt.Println("Error parsing JWT:", err)
+			return
+		}
+
+		// Extract the expiration time from the token claims
+		expirationTime := time.Unix(int64(token.Claims.(jwt.MapClaims)["exp"].(float64)), 0)
+
+		// Calculate the exact wait time until 5 minutes before expiration
+		timeToWait := time.Until(expirationTime.Add(-5 * time.Minute))
+
+		// Check if the token will expire within 5 minutes
+		if timeToWait > 0 {
+			// Wait until 5 minutes before expiration
+			fmt.Printf("Waiting until %v before renewing certificate...\n", timeToWait)
+			time.Sleep(timeToWait)
+
+			// Call the RenewCertificate function
+			RenewCertificate(ipServer, portServerInsecure, pathJWT, pathOwnKey, appName, false)
+		}
+
+		// Sleep for a short duration before checking expiration again
+		time.Sleep(1 * time.Minute)
+	}
 }
 
 func SignToken(token string, privateKey *rsa.PrivateKey) (string, error) {
@@ -196,7 +232,7 @@ func GetChallenge(tlsConfiguration *tls.Config, serverIp string,
 	defer request1.Body.Close()
 
 	nonceToken, err := io.ReadAll(request1.Body)
-	fmt.Println(fmt.Sprintf("Got Challenge: %v", string(nonceToken)))
+	fmt.Println("Received Challenge")
 	return nonceToken
 }
 
@@ -244,7 +280,7 @@ func VerifySignature(token, signature string, publicKey *rsa.PublicKey) (bool, e
 	if err != nil {
 		return false, nil // Verification failed
 	}
-	fmt.Println(token, signature, decodedSignature, hashed)
+
 	return true, nil // Verification successful
 }
 
@@ -255,7 +291,7 @@ func RenewCertificate(serverIp string, serverPort string, pathJwt string, pathKe
 
 	nonce := GetNewChallenge(serverIp, serverPort, appID)
 
-	fmt.Println("Request Token")
+	fmt.Println("Request new Workload Identity Token")
 
 	oldICT, err := os.ReadFile(pathJwt)
 	if err != nil {
@@ -306,13 +342,12 @@ func RenewCertificate(serverIp string, serverPort string, pathJwt string, pathKe
 	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)
 
-	fmt.Println("Response: ")
-	fmt.Println(string(body))
-
 	err = os.WriteFile(pathJwt, body, 0644)
 	if err != nil {
 		fmt.Println("JWT could not be stored", err)
 	}
+
+	fmt.Println("Successfuly Received new Workload Identity Token")
 
 }
 
@@ -335,14 +370,17 @@ func GetNewChallenge(serverIp string, serverPort string, appID string) string {
 	}
 	defer request1.Body.Close()
 
+	fmt.Println("Received New Challenge")
+
 	var data map[string]string
 	err = json.NewDecoder(request1.Body).Decode(&data)
 	if err != nil {
 		fmt.Println("Error decoding JSON response:", err)
 		return ""
 	}
-	//nonceOldKey := data["nonceOldKey"]
+
 	nonceNewKey := data["nonceNewKey"]
+
 	return nonceNewKey
 }
 
@@ -374,7 +412,7 @@ func VerifyICT(pathRootIp string, rootPort string, tokenString string) bool {
 		}
 
 		var publicKeyKid PublicKeyInfo
-		fmt.Println(jwks)
+
 		keyFound := false
 		for _, key := range jwks.Keys {
 			if key.Kid == kid {
@@ -411,8 +449,8 @@ func VerifyICT(pathRootIp string, rootPort string, tokenString string) bool {
 		return false
 	}
 
-	if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
-		fmt.Println("Token is valid. Claims: ", claims)
+	if _, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
+		fmt.Println("Token is valid.")
 		return true
 	} else {
 		fmt.Println("Invalid token")

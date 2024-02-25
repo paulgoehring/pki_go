@@ -47,4 +47,9 @@ func init() {
 		return
 	}
 	client.VerifyICT(RootIp, RootPort, string(token))
+
+	go client.CheckTokenExpirationPeriodically(PathIdentityToken, ServerIp, ServerPortInsecure, PathIdentityToken,
+		PathOwnKey, AppName, false)
+
+	select {}
 }

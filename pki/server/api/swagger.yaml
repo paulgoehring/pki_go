@@ -1,80 +1,92 @@
 openapi: 3.0.0
-info:
-  title: pki.in GO
-  description: pki in API docs
-  contact:
-    name: Paul Göhring
-    email: paul.goehring@student.uni-tuebingen.de
+info: 
+  title: rpki.in GO
+  description: rpki in API docs
   version: 1.0.0
-servers:
-- url: /
+  contact: 
+    email: paul.goehring@student.uni-tuebingen.de
+    name: Paul Göhring
 paths:
   /getChallenge:
     get:
       description: Get a Nonce Token
       parameters:
-      - name: appID
-        in: query
-        required: true
-        style: form
-        explode: true
-        schema:
-          type: string
+        - name: appID
+          in: query
+          required: true
+          schema:
+            type: string
       responses:
-        "200":
+        '200':
           description: Successful response
           content:
             text/plain:
               schema:
                 type: string
-                x-content-type: text/plain
-  /getToken:
+  /getNewChallenge:
+    get:
+      description: Get a Nonce Token
+      parameters:
+        - name: appID
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            text/plain:
+              schema:
+                type: string
+  /getCert:
     get:
       description: Get a Token
       responses:
         "200":
           description: 200 response
-          content:
+          content: 
             application/json:
               schema:
-                $ref: '#/components/schemas/jwt'
+                $ref: "#/components/schemas/jwt"
+  /getNewCert:
+    get:
+      description: Get a Token
+      responses:
+        "200":
+          description: 200 response
+          content: 
+            application/json:
+              schema:
+                $ref: "#/components/schemas/jwt"
 components:
   schemas:
     jwt:
       type: object
       properties:
         kty:
-          type: string
           description: key type
+          type: string
         iss:
-          type: string
           description: issuer
+          type: string
         exp:
-          type: string
           description: expiration date
-        kid:
           type: string
+        kid:
           description: key id of server key which signs jwt
+          type: string
         jwk:
-          $ref: '#/components/schemas/jwk'
-      example:
-        kty: kty
-        kid: kid
-        iss: iss
-        exp: exp
-        jwk:
-          kty: kty
-          e: e
-          use: use
-          kid: kid
-          alg: alg
-          "n": "n"
+          description: public key information of client
+          $ref: '#/components/schemas/jwk' 
+    
     jwk:
-      required:
-      - e
-      - kty
-      - "n"
       type: object
+      description: public key information of client
+      required:
+        - kty
+        - n
+        - e
       properties:
         kty:
           type: string
@@ -82,17 +94,10 @@ components:
           type: string
         alg:
           type: string
-        "n":
+        n:
           type: string
         e:
           type: string
         kid:
           type: string
-      description: public key information of client
-      example:
-        kty: kty
-        e: e
-        use: use
-        kid: kid
-        alg: alg
-        "n": "n"
+  

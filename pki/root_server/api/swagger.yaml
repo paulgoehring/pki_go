@@ -1,54 +1,91 @@
 openapi: 3.0.0
-info: 
-  title: pki.in GO
-  description: pki in API docs
-  version: 1.0.0
-  contact: 
-    email: paul.goehring@student.uni-tuebingen.de
+info:
+  title: rpki.in GO
+  description: rpki in API docs
+  contact:
     name: Paul Göhring
+    email: paul.goehring@student.uni-tuebingen.de
+  version: 1.0.0
+servers:
+- url: /
 paths:
   /getChallenge:
     get:
       description: Get a Nonce Token
       parameters:
-        - name: appID
-          in: query
-          required: true
-          schema:
-            type: string
+      - name: appID
+        in: query
+        required: true
+        style: form
+        explode: true
+        schema:
+          type: string
       responses:
-        '200':
+        "200":
           description: Successful response
           content:
             text/plain:
               schema:
                 type: string
-  /getToken:
+                x-content-type: text/plain
+  /getNewChallenge:
+    get:
+      description: Get a Nonce Token
+      parameters:
+      - name: appID
+        in: query
+        required: true
+        style: form
+        explode: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: Successful response
+          content:
+            text/plain:
+              schema:
+                type: string
+                x-content-type: text/plain
+  /getCert:
     get:
       description: Get a Token
       responses:
         "200":
           description: 200 response
-          content: 
+          content:
             application/json:
               schema:
-                $ref: "#/components/schemas/jwt"
-  /.well-known/certs:
+                $ref: '#/components/schemas/jwt'
+  /getNewCert:
     get:
-      description: Show all valid Certificates. Optional Get Parameter kid to get JWT for specific key
-      parameters:
-        - name: kid
-          in: query
-          required: false
-          schema:
-            type: string
+      description: Get a Token
       responses:
         "200":
           description: 200 response
-          content: 
+          content:
             application/json:
               schema:
-                $ref: "#/components/schemas/jwk"
+                $ref: '#/components/schemas/jwt'
+  /.well-known/certs:
+    get:
+      description: Show all valid Certificates. Optional Get Parameter kid to get
+        JWT for specific key
+      parameters:
+      - name: kid
+        in: query
+        required: false
+        style: form
+        explode: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: 200 response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/jwk'
             text/plain:
               schema:
                 type: string
@@ -58,28 +95,37 @@ components:
       type: object
       properties:
         kty:
+          type: string
           description: key type
-          type: string
         iss:
+          type: string
           description: issuer
-          type: string
         exp:
+          type: string
           description: expiration date
-          type: string
         kid:
-          description: key id of server key which signs jwt
           type: string
+          description: key id of server key which signs jwt
         jwk:
-          description: public key information of client
-          $ref: '#/components/schemas/jwk' 
-    
+          $ref: '#/components/schemas/jwk'
+      example:
+        kty: kty
+        kid: kid
+        iss: iss
+        exp: exp
+        jwk:
+          kty: kty
+          e: e
+          use: use
+          kid: kid
+          alg: alg
+          "n": "n"
     jwk:
-      type: object
-      description: public key information of client
       required:
-        - kty
-        - n
-        - e
+      - e
+      - kty
+      - "n"
+      type: object
       properties:
         kty:
           type: string
@@ -87,10 +133,17 @@ components:
           type: string
         alg:
           type: string
-        n:
+        "n":
           type: string
         e:
           type: string
         kid:
           type: string
-  
+      description: public key information of client
+      example:
+        kty: kty
+        e: e
+        use: use
+        kid: kid
+        alg: alg
+        "n": "n"

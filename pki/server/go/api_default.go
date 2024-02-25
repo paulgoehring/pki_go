@@ -105,7 +105,7 @@ type PublicKeyInfo struct {
 
 func Initialize() {
 	// create key pair
-	CreateKeyPair("private.key")
+	CreateKeyPair(PathOwnKey)
 	challenges = make(map[string]ChallengeObject)
 	challengesRenew = make(map[string]ChallengeObjectRenew)
 
@@ -113,16 +113,52 @@ func Initialize() {
 	// same as in client
 	GetCertificate(PathOwnKey, PathJWT, AppName, IpServer, PortServerSecure)
 	// check if Cert expires, before renew cert
-	// go renewCertificate()
 
-	// remove and add new certs whenever renew called
-	//PemCertChain = append(PemCertChain, base64.StdEncoding.EncodeToString([]byte(PathOwnCrt)))
+	// for testing purposes
 	time.Sleep(5 * time.Second)
 
 	RenewCertificate(IpServer, PortServerInsecure, PathJWT, PathOwnKey, AppName, false)
 
-	//PemCertChain = append(PemCertChain[1:], base64.StdEncoding.EncodeToString([]byte(PathOwnCrt)))
+	go checkTokenExpirationPeriodically(PathJWT)
 
+}
+
+func checkTokenExpirationPeriodically(jwtFilePath string) {
+	// checks if the JWT is about to expire and renews it if necessary
+	for {
+		// Read the JWT from the file
+		jwtBytes, err := os.ReadFile(jwtFilePath)
+		if err != nil {
+			fmt.Println("Error reading JWT file:", err)
+			return
+		}
+
+		// Parse the JWT token
+		token, _, err := new(jwt.Parser).ParseUnverified(string(jwtBytes), jwt.MapClaims{})
+		if err != nil {
+			fmt.Println("Error parsing JWT:", err)
+			return
+		}
+
+		// Extract the expiration time from the token claims
+		expirationTime := time.Unix(int64(token.Claims.(jwt.MapClaims)["exp"].(float64)), 0)
+
+		// Calculate the exact wait time until 5 minutes before expiration
+		timeToWait := time.Until(expirationTime.Add(-5 * time.Minute))
+
+		// Check if the token will expire within 5 minutes
+		if timeToWait > 0 {
+			// Wait until 5 minutes before expiration
+			fmt.Printf("Waiting until %v before renewing certificate...\n", timeToWait)
+			time.Sleep(timeToWait)
+
+			// Call the RenewCertificate function
+			RenewCertificate(IpServer, PortServerInsecure, PathJWT, PathOwnKey, AppName, false)
+		}
+
+		// Sleep for a short duration before checking expiration again
+		time.Sleep(1 * time.Minute)
+	}
 }
 
 func GetChallengeGet(w http.ResponseWriter, r *http.Request) {
@@ -130,7 +166,7 @@ func GetChallengeGet(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "No valid Method", http.StatusMethodNotAllowed)
 		return
 	}
-	fmt.Println("Got Challenge Request")
+	fmt.Println("Received Challenge Token")
 
 	frontendAppID := r.URL.Query().Get("appID")
 
@@ -147,7 +183,6 @@ func GetChallengeGet(w http.ResponseWriter, r *http.Request) {
 		fmt.Println("value for AppID missing")
 		nonce = "Value for AppID missing"
 	}
-	fmt.Println(fmt.Sprintf("Sent challenge: %v", nonce))
 
 	w.Header().Set("Content-Type", "text/plain")
 	fmt.Fprint(w, nonce)
@@ -158,7 +193,7 @@ func GetNewChallengeGet(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "No valid Method", http.StatusMethodNotAllowed)
 		return
 	}
-	fmt.Println("Got Challenge Request")
+	fmt.Println("Received Challenge Request")
 
 	frontendAppID := r.URL.Query().Get("appID")
 
@@ -205,7 +240,10 @@ func GetTokenGet(w http.ResponseWriter, r *http.Request) {
 	tokenString := r.Header.Get("Authorization")[7:]
 
 	parsedToken, _ := jwt.Parse(tokenString, nil)
-	privateKey, err := LoadPrivateKeyFromFile("private.key")
+	privateKey, err := LoadPrivateKeyFromFile(PathOwnKey)
+	if err != nil {
+		fmt.Println("Error loading private key", err)
+	}
 
 	claims, ok := parsedToken.Claims.(jwt.MapClaims)
 	if !ok {
@@ -282,13 +320,19 @@ func CreateCert(SerialNumber *big.Int, pubKey *rsa.PublicKey, signingCertPath st
 		}
 		signingCert, err = parseCertificatePEM(signingCertPEM)
 		if err != nil {
-			fmt.Println("Error parsing signing Certificate PEM")
+			fmt.Println("Error parsing signing Certificate PEM", err)
 		}
 		certDER, err = x509.CreateCertificate(rand.Reader, &certTemplate, signingCert,
 			pubKey, signingKey)
+		if err != nil {
+			fmt.Println("Error creating Certificate", err)
+		}
 	} else {
 		certDER, err = x509.CreateCertificate(rand.Reader, &certTemplate, &certTemplate,
 			pubKey, signingKey)
+		if err != nil {
+			fmt.Println("Error creating Certificate", err)
+		}
 	}
 
 	SerialNumber.Add(SerialNumber, big.NewInt(1))
@@ -353,7 +397,7 @@ func GetCertificate(keyPath string, tokenPath string, appId string, serverIp str
 	nonceToken := GetChallenge(serverIp, serverPort, appId)
 	challenge := string(nonceToken)
 
-	fmt.Println("Request Token")
+	fmt.Println("Requesting Workload Identity Token")
 
 	fingerprint := challenge + appId
 	privateKey, err := LoadPrivateKeyFromFile(keyPath)
@@ -379,22 +423,29 @@ func GetCertificate(keyPath string, tokenPath string, appId string, serverIp str
 	}
 	url := fmt.Sprintf("https://%v:%v/getCert", serverIp, serverPort)
 	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		fmt.Println("Error creating request", err)
+	}
 	req.Header.Set("Authorization", "Bearer "+newJwt)
 
 	resp, err := client.Do(req)
 	if err != nil {
+		fmt.Println("Error sending request", err)
 		return
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)
-
-	//fmt.Println("Response: ")
-	//fmt.Println(string(body))
+	if err != nil {
+		fmt.Println("Error reading response", err)
+		return
+	}
 
 	err = os.WriteFile(tokenPath, body, 0644)
 	if err != nil {
 		fmt.Println("Error Writing JWT", err)
 	}
+
+	fmt.Println("Successfuly Received Workload Identity Token")
 
 }
 
@@ -568,7 +619,7 @@ func GetChallenge(challengeIp string, challengePort string, appId string) []byte
 	if err != nil {
 		fmt.Println("Error reading Nonce Response", err)
 	}
-	fmt.Println("Got Challenge")
+	fmt.Println("Received Challenge Token")
 	return nonceToken
 }
 
@@ -646,7 +697,7 @@ func GetNewTokenGet(w http.ResponseWriter, r *http.Request) {
 
 	parsedToken, _ := jwt.Parse(tokenString, nil)
 
-	privateKey, err := LoadPrivateKeyFromFile("private.key")
+	privateKey, err := LoadPrivateKeyFromFile(PathOwnKey)
 
 	claims, ok := parsedToken.Claims.(jwt.MapClaims)
 	if !ok {
@@ -748,7 +799,7 @@ func RenewCertificate(serverIp string, serverPort string, pathJwt string, pathKe
 
 	nonce := GetNewChallenge(serverIp, serverPort, appID)
 
-	fmt.Println("Request Token")
+	fmt.Println("Requesting New Workload Identity Token")
 
 	oldICT, err := os.ReadFile(pathJwt)
 	if err != nil {
@@ -791,27 +842,34 @@ func RenewCertificate(serverIp string, serverPort string, pathJwt string, pathKe
 	//fmt.Println(newJwt)
 	serverUrl := fmt.Sprintf("http://%v:%v/getNewCert", serverIp, serverPort)
 	req, err := http.NewRequest("GET", serverUrl, nil)
+	if err != nil {
+		fmt.Println("Error creating request", err)
+	}
+
 	req.Header.Set("Authorization", "Bearer "+newJwt)
 
 	resp, err := client.Do(req)
 	if err != nil {
+		fmt.Println("Error sending request", err)
 		return
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)
-
-	fmt.Println("Response: ")
-	fmt.Println(string(body))
+	if err != nil {
+		fmt.Println("Error reading response", err)
+		return
+	}
 
 	err = os.WriteFile(pathJwt, body, 0644)
 	if err != nil {
 		fmt.Println("JWT could not be stored", err)
 	}
 
+	fmt.Println("Successfuly Received new Workload Identity Token")
 }
 
 func GetNewChallenge(serverIp string, serverPort string, appID string) string {
-	// TODO Correct IP and port
+
 	u, err := url.Parse(fmt.Sprintf("http://%s:%s/getNewChallenge", serverIp, serverPort))
 	if err != nil {
 		fmt.Println("Could not parse URL", err)
@@ -827,6 +885,7 @@ func GetNewChallenge(serverIp string, serverPort string, appID string) string {
 		return ""
 	}
 	defer request1.Body.Close()
+	fmt.Println("Received Challenge Token")
 
 	var data map[string]string
 	err = json.NewDecoder(request1.Body).Decode(&data)
@@ -890,7 +949,7 @@ func VerifyICT(rootIp string, rootPort string, tokenString string) bool {
 		}
 
 		var publicKeyKid PublicKeyInfo
-		//fmt.Println(jwks)
+
 		keyFound := false
 		for _, key := range jwks.Keys {
 			if key.Kid == kid {
@@ -919,8 +978,8 @@ func VerifyICT(rootIp string, rootPort string, tokenString string) bool {
 		return false
 	}
 
-	if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
-		fmt.Println("Token is valid. Claims: ", claims)
+	if _, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
+		fmt.Println("Token is valid.")
 		return true
 	} else {
 		fmt.Println("Invalid token")

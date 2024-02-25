@@ -37,12 +37,24 @@ func main() {
 		Addr: ":8443",
 	}
 
+	// https setup for well-known/certs endpoint
+	mux := http.NewServeMux()
+	mux.HandleFunc("/.well-known/certs", root.WellKnownCertsGet)
+
+	server3 := http.Server{
+		Addr:    ":8444",
+		Handler: mux,
+	}
+
 	router := root.NewRouter()
 	server.Handler = router
 	server2.Handler = router
 
 	go func() {
 		log.Fatal(server.ListenAndServeTLS("", ""))
+	}()
+	go func() {
+		log.Fatal(server3.ListenAndServeTLS(root.PathOwnCrt, root.PathServerKey))
 	}()
 	log.Fatal(server2.ListenAndServe())
 }
