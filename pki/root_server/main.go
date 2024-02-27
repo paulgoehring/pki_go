@@ -30,11 +30,11 @@ func main() {
 
 	root.Initialize()
 	server := http.Server{
-		Addr:      ":8080",
+		Addr:      ":8090",
 		TLSConfig: root.DefineTLSConfig(),
 	}
 	server2 := http.Server{
-		Addr: ":8443",
+		Addr: ":8091",
 	}
 
 	// https setup for well-known/certs endpoint

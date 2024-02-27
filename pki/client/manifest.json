@@ -1,0 +1,47 @@
+{
+    "Packages": {
+        "server": {
+            "Debug": true,
+            "UniqueID": "8ddfa9311671d3f8cc2d756f9df77eebd41c5ebc8afb04a6d5444e29919c9326"
+        },
+        "client": {
+            "Debug": true,
+            "UniqueID": "UniqueID here"
+        }
+    },
+    "Marbles": {
+        "pkis": {
+            "Package": "server",
+            "Parameters": {
+                "Env": {
+                    "ROOT_CA": "{{ pem .MarbleRun.RootCA.Cert }}",
+                    "MARBLE_CERT": "{{ pem .MarbleRun.MarbleCert.Cert }}",
+                    "MARBLE_KEY": "{{ pem .MarbleRun.MarbleCert.Private }}",
+                    "SERVER_IP": "localhost",
+                    "SERVER_PORT_SECURE": "8090",
+                    "SERVER_PORT_INSECURE": "8091",
+                    "ROOT_URL": "localhost",
+                    "ROOT_PORT": "8091",
+                    "OWN_PORT_SECURE": "8092",
+                    "OWN_PORT_INSECURRE": "8093"
+                }
+            }
+        },
+        "pkic": {
+            "Package": "client",
+            "Parameters": {
+                "Env": {
+                    "ROOT_CA": "{{ pem .MarbleRun.RootCA.Cert }}",
+                    "MARBLE_CERT": "{{ pem .MarbleRun.MarbleCert.Cert }}",
+                    "MARBLE_KEY": "{{ pem .MarbleRun.MarbleCert.Private }}",
+                    "SERVER_IP": "localhost",
+                    "SERVER_PORT_SECURE": "8092",
+                    "SERVER_PORT_INSECURE": "8093",
+                    "ROOT_URL": "localhost",
+                    "ROOT_PORT": "8091"
+                }
+            }
+        }
+    }
+}
+

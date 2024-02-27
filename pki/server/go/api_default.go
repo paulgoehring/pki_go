@@ -26,6 +26,7 @@ import (
 	"io"
 	"log"
 	"math/big"
+	mathrand "math/rand"
 	"net/http"
 	"net/url"
 	"os"
@@ -49,16 +50,18 @@ var PathMarblePrivateKey string = "marbleServer.key"
 var SerialNumber = big.NewInt(0)
 
 // own App Name
-var AppName = "Intermediate PKI Server" // os.getEnv("appName")
+var AppName string // os.getEnv("appName")
+var OwnPortSecure string
+var OwnPortInsecure string
 
-// variables to access root Server for Verify ICT
-var RootUrl = "localhost"
-var RootPort = "8443"
+// variables to access root Server to Verify ICT
+var RootUrl string
+var RootPort string
 
 // variable of next Server to get Certificate
-var IpServer = "localhost"
-var PortServerSecure = "8080"   // os.getEnv("portSecure")
-var PortServerInsecure = "8443" // os.getEnv("portInsecure")
+var IpServer string
+var PortServerSecure string
+var PortServerInsecure string
 
 // everything which is a global variable and can be changed
 // should be accesseed via env parameter and can be defined
@@ -104,6 +107,34 @@ type PublicKeyInfo struct {
 }
 
 func Initialize() {
+	AppName = "PKI Intermediate Server" + fmt.Sprint(mathrand.Intn(1000))
+
+	err := os.WriteFile(PathMarbleRootCrt, []byte(os.Getenv("MARBLE_ROOT_CA")), 0644)
+	if err != nil {
+		fmt.Println("Error Writing Marble Root Certificate", err)
+	}
+
+	err = os.WriteFile(PathMarbleOwnCrt, []byte(os.Getenv("MARBLE_CERT")), 0644)
+	if err != nil {
+		fmt.Println("Error Writing Marble Own Certificate", err)
+	}
+
+	err = os.WriteFile(PathMarblePrivateKey, []byte(os.Getenv("MARBLE_KEY")), 0644)
+	if err != nil {
+		fmt.Println("Error Writing Marble Private Key", err)
+	}
+
+	OwnPortSecure = os.Getenv("OWN_PORT_SECURE")
+	OwnPortInsecure = os.Getenv("OWN_PORT_INSECURE")
+
+	// variables to access root Server to Verify ICT
+	RootUrl = os.Getenv("ROOT_URL")
+	RootPort = os.Getenv("ROOT_PORT")
+
+	// variable of next Server to get Certificate
+	IpServer = os.Getenv("SERVER_IP")
+	PortServerSecure = os.Getenv("SERVER_PORT_SECURE")
+	PortServerInsecure = os.Getenv("SERVER_PORT_INSECURE")
 	// create key pair
 	CreateKeyPair(PathOwnKey)
 	challenges = make(map[string]ChallengeObject)

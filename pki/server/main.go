@@ -44,12 +44,12 @@ func main() {
 	server.Initialize()
 
 	server1 := http.Server{
-		Addr:      ":8081",
+		Addr:      server.OwnPortSecure,
 		TLSConfig: server.DefineTLSConfig(),
 	}
 
 	server2 := http.Server{
-		Addr: ":8082",
+		Addr: server.OwnPortInsecure,
 	}
 
 	router := server.NewRouter()
