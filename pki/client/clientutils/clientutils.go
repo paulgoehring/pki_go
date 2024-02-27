@@ -389,7 +389,7 @@ func VerifyICT(pathRootIp string, rootPort string, tokenString string) bool {
 
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 		//resp, err := http.Get(pathRootIp + ":" + rootPort + "/.well-known/certs")
-		resp, err := http.Get("http://localhost:8443/.well-known/certs")
+		resp, err := http.Get(fmt.Sprintf("http://%v:%v/.well-known/certs", pathRootIp, rootPort))
 		if err != nil {
 			return nil, err
 		}
