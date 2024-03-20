@@ -10,29 +10,39 @@ import (
 
 func main() {
 	// Generate RSA key.
-	_ = testKeys()
+
 	//go startServer()
 	// _ = testNetwork()
+	//for i := 0; i < 20; i++ {
 	//_ = testFibonacci()
+	_ = testKeys()
+	//}
 }
 
 func testKeys() int {
 	// Generate RSA key.
-	counter := 0
-	startTime := time.Now()
-	bitSize := 2048
-	duration := 1 * time.Minute
-	var err error
+	start := time.Now() // Record the start time
 
-	for time.Since(startTime) < duration {
-		_, err = rsa.GenerateKey(rand.Reader, bitSize)
+	count := 0 // Initialize a counter for generated keys
+
+	// Loop until one minute has passed
+	for time.Since(start) < time.Minute {
+		// Generate an RSA key
+		_, err := rsa.GenerateKey(rand.Reader, 2048)
 		if err != nil {
-			panic(err)
+			fmt.Println("Error generating RSA key:", err)
+			return 0
 		}
-		counter = counter + 1
+
+		count++ // Increment the counter for each generated key
 	}
-	fmt.Printf("Number Keys created: %d\n", counter)
-	return counter
+
+	// Calculate keys per minute
+	keysPerMinute := float64(count) / time.Since(start).Minutes()
+
+	fmt.Printf("Generated %d RSA keys in one minute.\n", count)
+	fmt.Printf("Average keys per minute: %.2f\n", keysPerMinute)
+	return count
 }
 
 func testNetwork() int {
@@ -136,7 +146,7 @@ func testFibonacci() int {
 	duration := 1 * time.Minute
 	var res int
 	for time.Since(startTime) < duration {
-		res = fibonacci(15)
+		res = fibonacci(30)
 		counter = counter + 1
 	}
 	fmt.Printf("fibonacci numbers calculated: %d\n", counter)
