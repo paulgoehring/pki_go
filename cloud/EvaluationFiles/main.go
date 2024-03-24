@@ -6,21 +6,34 @@ import (
 	"fmt"
 	"net"
 	"time"
+
+	"github.com/golang-jwt/jwt"
 )
+
+var privateKey *rsa.PrivateKey
+var publicKey *rsa.PublicKey
+var err error
 
 func main() {
 	// Generate RSA key.
+	privateKey, publicKey, err = GenerateRSAKeyPair()
+	if err != nil {
+		fmt.Println("Error generating RSA key pair:", err)
+		return
+	}
 
-	//go startServer()
+	go startServer()
 	// _ = testNetwork()
-	//for i := 0; i < 20; i++ {
-	//_ = testFibonacci()
-	_ = testKeys()
-	//}
+	for i := 0; i < 20; i++ {
+		//_ = testFibonacci()
+		//_ = testKeys()
+		_ = testNetwork()
+	}
 }
 
 func testKeys() int {
 	// Generate RSA key.
+
 	start := time.Now() // Record the start time
 
 	count := 0 // Initialize a counter for generated keys
@@ -82,9 +95,66 @@ func startServer() {
 	}
 }
 
+func SignJWTWithRSA(claims jwt.Claims, privateKey *rsa.PrivateKey) (string, error) {
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+	signedToken, err := token.SignedString(privateKey)
+	if err != nil {
+		return "", fmt.Errorf("failed to sign JWT: %w", err)
+	}
+	return signedToken, nil
+}
+
+func GenerateRSAKeyPair() (*rsa.PrivateKey, *rsa.PublicKey, error) {
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return nil, nil, err
+	}
+	return privateKey, &privateKey.PublicKey, nil
+}
+
+func VerifyJWTWithRSA(tokenString string, publicKey *rsa.PublicKey) (jwt.Claims, error) {
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+		return publicKey, nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse JWT: %w", err)
+	}
+
+	if !token.Valid {
+		return nil, fmt.Errorf("JWT token is not valid")
+	}
+
+	// Extract and return claims
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return nil, fmt.Errorf("failed to extract JWT claims")
+	}
+
+	return claims, nil
+}
+
 // handleConnection function to handle the communication with a single client
 func handleConnection(conn net.Conn) {
 	defer conn.Close()
+	claims := jwt.MapClaims{
+		"username": "john.doe",
+		"exp":      time.Now().Add(time.Hour * 24).Unix(), // Expire in 24 hours
+	}
+
+	signedToken, err := SignJWTWithRSA(claims, privateKey)
+	if err != nil {
+		fmt.Println("Error signing JWT with RSA:", err)
+		return
+	}
+
+	_, err = VerifyJWTWithRSA(signedToken, publicKey)
+	if err != nil {
+		fmt.Println("Error verifying JWT with RSA:", err)
+		return
+	}
 
 	// Buffer to read data from the client
 	buffer := make([]byte, 1024)
