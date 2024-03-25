@@ -224,7 +224,7 @@ func GetNewChallengeGet(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "No valid Method", http.StatusMethodNotAllowed)
 		return
 	}
-	fmt.Println("Received Challenge Request")
+	//fmt.Println("Received Challenge Request")
 
 	frontendAppID := r.URL.Query().Get("appID")
 
@@ -722,7 +722,7 @@ func GetNewTokenGet(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "No valid Method", http.StatusMethodNotAllowed)
 		return
 	}
-	fmt.Println("Got Certification request")
+	//fmt.Println("Got Certification request")
 
 	tokenString := r.Header.Get("Authorization")[7:]
 
@@ -742,13 +742,13 @@ func GetNewTokenGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !VerifyICT(RootUrl, RootPort, oldIct) {
-		fmt.Println("Unsuccessfull", err)
-		w.WriteHeader(http.StatusUnauthorized)
-		message := "Access Denied: You do not have permission to access this resource."
-		fmt.Fprintln(w, message)
-		return
-	}
+	//if !VerifyICT(RootUrl, RootPort, oldIct) {
+	//	fmt.Println("Unsuccessfull", err)
+	//	w.WriteHeader(http.StatusUnauthorized)
+	//	message := "Access Denied: You do not have permission to access this resource."
+	//	fmt.Fprintln(w, message)
+	//	return
+	//}
 
 	parsedIct, _ := jwt.Parse(oldIct, nil)
 
@@ -771,6 +771,20 @@ func GetNewTokenGet(w http.ResponseWriter, r *http.Request) {
 	recreateOldPubKey := &rsa.PublicKey{
 		N: n2,
 		E: int(e2.Int64()),
+	}
+
+	token, err := jwt.Parse(oldIct, func(token *jwt.Token) (interface{}, error) {
+		// Check the signing method
+		if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+		return recreateOldPubKey, nil
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	if !token.Valid {
+		fmt.Println("token not valid")
 	}
 
 	newPublicKeyData := claims["jwk"].(map[string]interface{})
@@ -796,9 +810,9 @@ func GetNewTokenGet(w http.ResponseWriter, r *http.Request) {
 		return recreateOldPubKey, nil
 	})
 	if err == nil && tokenValid.Valid {
-		fmt.Println("JWT is valid.")
+		//	fmt.Println("JWT is valid.")
 	} else {
-		fmt.Println("Unsuccessfull", err)
+		//	fmt.Println("Unsuccessfull", err)
 		w.WriteHeader(http.StatusUnauthorized)
 		message := "Access Denied: You do not have permission to access this resource."
 		fmt.Fprintln(w, message)
@@ -807,9 +821,9 @@ func GetNewTokenGet(w http.ResponseWriter, r *http.Request) {
 
 	ver, err := VerifySignature(newFingerprintToVerify, signedNewFingerprint, recreateNewPubKey)
 	if ver {
-		fmt.Println("Verification of new Key successfull")
+		//	fmt.Println("Verification of new Key successfull")
 	} else {
-		fmt.Println("Unsuccessfull", err)
+		//	fmt.Println("Unsuccessfull", err)
 		w.WriteHeader(http.StatusUnauthorized)
 		message := "Access Denied: You do not have permission to access this resource."
 		fmt.Fprintln(w, message)

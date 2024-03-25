@@ -1,7 +1,7 @@
 package clientutils
 
 import (
-	myutils "client/myutils"
+	//myutils "client/myutils"
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
@@ -124,7 +124,7 @@ func CheckTokenExpirationPeriodically(jwtFilePath string, ipServer string, portS
 			time.Sleep(timeToWait)
 
 			// Call the RenewCertificate function
-			RenewCertificate(ipServer, portServerInsecure, pathJWT, pathOwnKey, appName, false)
+			//RenewCertificate(ipServer, portServerInsecure, pathJWT, pathOwnKey, appName, false)
 		}
 
 		// Sleep for a short duration before checking expiration again
@@ -284,38 +284,28 @@ func VerifySignature(token, signature string, publicKey *rsa.PublicKey) (bool, e
 	return true, nil // Verification successful
 }
 
-func RenewCertificate(serverIp string, serverPort string, pathJwt string, pathKey string, appID string, newKey bool) {
+func RenewCertificate(privateKeyOld *rsa.PrivateKey, oldICT []byte, serverIp string, serverPort string, pathJwt string, pathKey string, appID string, newKey bool) {
 	// get new challenge
 	// if new key then you need two proof of possession
 	// formulate new jwt, including old jwt
 
 	nonce := GetNewChallenge(serverIp, serverPort, appID)
 
-	fmt.Println("Request new Workload Identity Token")
-
-	oldICT, err := os.ReadFile(pathJwt)
-	if err != nil {
-		fmt.Println("Error reading JWT file:", err)
-		return
-	}
+	//fmt.Println("Request new Workload Identity Token")
 
 	fingerprintNew := string(nonce) + appID
-	privateKeyOld, err := LoadPrivateKeyFromFile(pathKey)
-	if err != nil {
-		fmt.Println("Error loading private key", err)
-	}
 
 	var privateKeyNew *rsa.PrivateKey
-	if newKey {
-		// create new key pair
-		myutils.CreateKeyPair(pathKey)
-		privateKeyNew, err = LoadPrivateKeyFromFile(pathKey)
-		if err != nil {
-			fmt.Println("Error loading private key", err)
-		}
-	} else {
-		privateKeyNew = privateKeyOld
-	}
+	//if newKey {
+	// create new key pair
+	//	myutils.CreateKeyPair(pathKey)
+	//	privateKeyNew, err = LoadPrivateKeyFromFile(pathKey)
+	//	if err != nil {
+	//		fmt.Println("Error loading private key", err)
+	//	}
+	//} else {
+	privateKeyNew = privateKeyOld
+	//}
 
 	signedTokenNew, err := SignToken(fingerprintNew, privateKeyNew)
 	if err != nil {
@@ -340,14 +330,14 @@ func RenewCertificate(serverIp string, serverPort string, pathJwt string, pathKe
 		return
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
+	_, err = io.ReadAll(resp.Body)
 
-	err = os.WriteFile(pathJwt, body, 0644)
-	if err != nil {
-		fmt.Println("JWT could not be stored", err)
-	}
+	//err = os.WriteFile(pathJwt, body, 0644)
+	//if err != nil {
+	//	fmt.Println("JWT could not be stored", err)
+	//}
 
-	fmt.Println("Successfuly Received new Workload Identity Token")
+	//fmt.Println("Successfuly Received new Workload Identity Token")
 
 }
 

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"time"
 
 	client "client/clientutils"
 	myutils "client/myutils"
@@ -64,8 +65,8 @@ func init() {
 	myutils.CreateKeyPair(PathOwnKey)
 	client.GetCertificate(PathOwnKey, PathIdentityToken, PathMarbleKey, PathMarbleCrt,
 		AppName, ServerIp, ServerPortSecure)
-	client.RenewCertificate(ServerIp, ServerPortInsecure, PathIdentityToken,
-		PathOwnKey, AppName, false)
+	//client.RenewCertificate(ServerIp, ServerPortInsecure, PathIdentityToken,
+	//	PathOwnKey, AppName, false)
 
 	token, err := os.ReadFile(PathIdentityToken)
 	if err != nil {
@@ -74,8 +75,37 @@ func init() {
 	}
 	client.VerifyICT(RootIp, RootPort, string(token))
 
-	go client.CheckTokenExpirationPeriodically(PathIdentityToken, ServerIp, ServerPortInsecure, PathIdentityToken,
-		PathOwnKey, AppName, false)
+	//go client.CheckTokenExpirationPeriodically(PathIdentityToken, ServerIp, ServerPortInsecure, PathIdentityToken,
+	//PathOwnKey, AppName, false)
 
 	// implement Client Logic Here
+	for i := 0; i < 20; i++ {
+		//_ = testFibonacci()
+		//_ = testKeys()
+		_ = test1Minute()
+	}
+}
+
+func test1Minute() int {
+	start := time.Now() // Record the start time
+
+	count := 0 // Initialize a counter for generated keys
+
+	oldICT, err := os.ReadFile(PathIdentityToken)
+	if err != nil {
+		fmt.Println("Error reading JWT file:", err)
+	}
+	privateKeyOld, err := client.LoadPrivateKeyFromFile(PathOwnKey)
+	if err != nil {
+		fmt.Println("Error loading private key", err)
+	}
+
+	// Loop until one minute has passed
+	for time.Since(start) < time.Minute {
+		// Generate an RSA key
+		client.RenewCertificate(privateKeyOld, oldICT, ServerIp, ServerPortInsecure, PathIdentityToken, PathOwnKey, AppName, false)
+		count++ // Increment the counter for each generated key
+	}
+	fmt.Printf("Number Server interactions: %d\n", count)
+	return count
 }
