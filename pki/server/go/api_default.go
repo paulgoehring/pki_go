@@ -683,7 +683,7 @@ func DefineTLSConfig() *tls.Config {
 				for _, cert := range chain {
 					// Check if the "iat" field is not older than 5 minutes ago
 					iat := cert.NotBefore
-					maxAge := 10000 * time.Minute //change later
+					maxAge := 5 * time.Minute //change later
 					if time.Since(iat) > maxAge {
 						return fmt.Errorf("client certificate is too old (issued more than 5 minutes ago)")
 					}

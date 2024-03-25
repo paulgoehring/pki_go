@@ -32,9 +32,6 @@ func NewRouter() *mux.Router {
 		var handler http.Handler
 		handler = route.HandlerFunc
 
-		//if route.Name == "GetTokenGet" {
-		//	handler = ApplyMTLSConfig(handler)
-		//}
 		handler = Logger(handler, route.Name)
 
 		router.
@@ -44,6 +41,23 @@ func NewRouter() *mux.Router {
 			Handler(handler)
 	}
 
+	return router
+}
+
+func NewRouter2() *mux.Router {
+	router := mux.NewRouter().StrictSlash(true)
+	for _, route := range routes2 {
+		var handler http.Handler
+		handler = route.HandlerFunc
+
+		handler = Logger(handler, route.Name)
+
+		router.
+			Methods(route.Method).
+			Path(route.Pattern).
+			Name(route.Name).
+			Handler(handler)
+	}
 	return router
 }
 
@@ -98,5 +112,44 @@ var routes = Routes{
 		strings.ToUpper("Get"),
 		"/getNewCert",
 		GetNewTokenGet,
+	},
+	Route{
+		"WellKnownConfigGet",
+		strings.ToUpper("Get"),
+		"/.well-known/openid-configuration",
+		WellKnownConfigurationGet,
+	},
+}
+
+var routes2 = Routes{
+	Route{
+		"Index",
+		"GET",
+		"/",
+		Index,
+	},
+	Route{
+		"WellKnownCertsGet",
+		strings.ToUpper("Get"),
+		"/.well-known/certs",
+		WellKnownCertsGet,
+	},
+	Route{
+		"GetNewChallengeGet",
+		strings.ToUpper("Get"),
+		"/getNewChallenge",
+		GetNewChallengeGet,
+	},
+	Route{
+		"GetNewTokenGet",
+		strings.ToUpper("Get"),
+		"/getNewCert",
+		GetNewTokenGet,
+	},
+	Route{
+		"WellKnownConfigGet",
+		strings.ToUpper("Get"),
+		"/.well-known/openid-configuration",
+		WellKnownConfigurationGet,
 	},
 }

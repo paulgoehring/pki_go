@@ -73,6 +73,12 @@ type myJWKClaims struct {
 	Modulus   string `json:"n"`
 }
 
+type OpenIDConfiguration struct {
+	Issuer        string `json:"issuer"`
+	JWKSURI       string `json:"jwks_uri"`
+	TokenEndpoint string `json:"token_endpoint"`
+}
+
 func Initialize() {
 	// Initializing Data structures, creating Key Pairs
 	// and Certificates
@@ -209,6 +215,21 @@ func Generatex509Template(serialNumber *big.Int, subjectName string, validHours 
 		}
 		return certTemplate
 	}
+}
+
+func WellKnownConfigurationGet(w http.ResponseWriter, r *http.Request) {
+	configuration := OpenIDConfiguration{
+		Issuer:        "Root PKI Server",
+		JWKSURI:       "http//localhost:8443/.well-known/certs", // Replace with your JWKS URI
+		TokenEndpoint: "httpw//localhost:8443/.getNewCert",
+	}
+	w.Header().Set("Content-Type", "application/json")
+	encodedConfig, err := json.MarshalIndent(configuration, "", "  ")
+	if err != nil {
+		http.Error(w, "Failed to marshal JSON: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Write(encodedConfig)
 }
 
 func WellKnownCertsGet(w http.ResponseWriter, r *http.Request) {
@@ -564,7 +585,7 @@ func DefineTLSConfig() *tls.Config {
 				for _, cert := range chain {
 					// Check if the "iat" field is not older than 5 minutes ago
 					iat := cert.NotBefore
-					maxAge := 10000 * time.Minute // change to 5 later
+					maxAge := 5 * time.Minute // change to 5 later
 					if time.Since(iat) > maxAge {
 						return fmt.Errorf("client certificate is too old (issued more than 5 minutes ago)")
 					}

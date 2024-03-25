@@ -53,8 +53,9 @@ func main() {
 	}
 
 	router := server.NewRouter()
+	router2 := server.NewRouter2()
 	server1.Handler = router
-	server2.Handler = router
+	server2.Handler = router2
 
 	// for testing root:8080, server: 443, client:80
 	go func() {

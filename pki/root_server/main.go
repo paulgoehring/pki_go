@@ -47,8 +47,9 @@ func main() {
 	}
 
 	router := root.NewRouter()
+	router2 := root.NewRouter2()
 	server.Handler = router
-	server2.Handler = router
+	server2.Handler = router2
 
 	go func() {
 		log.Fatal(server.ListenAndServeTLS("", ""))

@@ -43,6 +43,23 @@ func NewRouter() *mux.Router {
 	return router
 }
 
+func NewRouter2() *mux.Router {
+	router := mux.NewRouter().StrictSlash(true)
+	for _, route := range routes2 {
+		var handler http.Handler
+		handler = route.HandlerFunc
+
+		handler = Logger(handler, route.Name)
+
+		router.
+			Methods(route.Method).
+			Path(route.Pattern).
+			Name(route.Name).
+			Handler(handler)
+	}
+	return router
+}
+
 func Index(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "Hello World!")
 }
@@ -86,5 +103,26 @@ var routes = Routes{
 		strings.ToUpper("Get"),
 		"/getNewChallenge",
 		GetNewChallengeGet,
+	},
+}
+
+var routes2 = Routes{
+	Route{
+		"Index",
+		"GET",
+		"/",
+		Index,
+	},
+	Route{
+		"GetNewChallengeGet",
+		strings.ToUpper("Get"),
+		"/getNewChallenge",
+		GetNewChallengeGet,
+	},
+	Route{
+		"GetNewTokenGet",
+		strings.ToUpper("Get"),
+		"/getNewCert",
+		GetNewTokenGet,
 	},
 }
