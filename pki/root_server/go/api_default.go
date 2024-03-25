@@ -200,6 +200,27 @@ func Generatex509Template(serialNumber *big.Int, subjectName string, validHours 
 	}
 }
 
+type OpenIDConfiguration struct {
+	Issuer        string `json:"issuer"`
+	JWKSURI       string `json:"jwks_uri"`
+	TokenEndpoint string `json:"token_endpoint"`
+}
+
+func WellKnownConfigurationGet(w http.ResponseWriter, r *http.Request) {
+	configuration := OpenIDConfiguration{
+		Issuer:        "Root PKI Server",
+		JWKSURI:       "http//localhost:8443/.well-known/certs", // Replace with your JWKS URI
+		TokenEndpoint: "httpw//localhost:8443/.getNewCert",
+	}
+	w.Header().Set("Content-Type", "application/json")
+	encodedConfig, err := json.MarshalIndent(configuration, "", "  ")
+	if err != nil {
+		http.Error(w, "Failed to marshal JSON: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Write(encodedConfig)
+}
+
 func WellKnownCertsGet(w http.ResponseWriter, r *http.Request) {
 	// Get all valid public keys or a specific key by kid
 	// if kid is given in the request

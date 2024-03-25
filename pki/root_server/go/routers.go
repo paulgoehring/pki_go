@@ -99,4 +99,10 @@ var routes = Routes{
 		"/getNewCert",
 		GetNewTokenGet,
 	},
+	Route{
+		"WellKnownConfigGet",
+		strings.ToUpper("Get"),
+		"/.well-known/openid-configuration",
+		WellKnownConfigurationGet,
+	},
 }
