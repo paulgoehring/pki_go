@@ -39,6 +39,8 @@ var PathServerKey string = "private.key"
 var PathRootCrt string = "root.crt"
 var SerialNumber = big.NewInt(0)
 var AppName string = "RootPkiServer"
+var RootUrl string
+var RootPort string
 
 //maybe load private key and cert here for better performance
 
@@ -83,6 +85,15 @@ func Initialize() {
 
 	privateKey, _ := LoadPrivateKeyFromFile(PathServerKey)
 	publicKey := &privateKey.PublicKey
+
+	RootUrl = os.Getenv("ownUrl")
+	RootPort = os.Getenv("ownPort")
+	if RootUrl == "" {
+		RootUrl = "localhost"
+	}
+	if RootPort == "" {
+		RootPort = "8091"
+	}
 	// how long own Key Pair is valid
 	expiration := time.Now().Add(time.Hour * 8760)
 	publicKeyData := PublicKeyInfo{
@@ -436,7 +447,7 @@ func CreateJwt(privKey *rsa.PrivateKey, frontEndID string,
 	}
 	claims := jwt.MapClaims{
 		"sub": frontEndID,
-		"iss": issuerName,
+		"iss": fmt.Sprintf("http://%v:%v", RootUrl, RootPort),
 		"iat": iat.Unix(),
 		"exp": expiration.Unix(),
 		"jwk": myClaims,

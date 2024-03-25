@@ -326,7 +326,7 @@ func GetTokenGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	newJwt := CreateJwt(privateKey, frontendAppID, recreatePubKey, frontendAppID)
+	newJwt := CreateJwt(privateKey, frontendAppID, recreatePubKey, frontendAppID, RootUrl, RootPort)
 
 	w.Header().Set("Content-Type", "application/json")
 	fmt.Fprint(w, newJwt)
@@ -505,7 +505,7 @@ func GenerateKIDFromPublicKey(publicKey *rsa.PublicKey) string {
 	return kid
 }
 
-func CreateJwt(privKey *rsa.PrivateKey, frontEndID string, publicKey *rsa.PublicKey, appID string) string {
+func CreateJwt(privKey *rsa.PrivateKey, frontEndID string, publicKey *rsa.PublicKey, appID string, rootIp string, rootPort string) string {
 	//x5cField := append([]string{issuedCert}, certChain...)
 
 	iat := time.Now()
@@ -520,7 +520,7 @@ func CreateJwt(privKey *rsa.PrivateKey, frontEndID string, publicKey *rsa.Public
 	}
 	claims := jwt.MapClaims{
 		"sub": frontEndID,
-		"iss": appID,
+		"iss": fmt.Sprintf("http://%v:%v", rootIp, rootPort),
 		"iat": iat.Unix(),        // maybe without Unix?
 		"exp": expiration.Unix(), // maybe without unix
 		"jwk": myClaims,
@@ -816,7 +816,7 @@ func GetNewTokenGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	newJwt := CreateJwt(privateKey, frontendAppID, recreateNewPubKey, frontendAppID)
+	newJwt := CreateJwt(privateKey, frontendAppID, recreateNewPubKey, frontendAppID, RootUrl, RootPort)
 
 	w.Header().Set("Content-Type", "application/json")
 	fmt.Fprint(w, newJwt)
