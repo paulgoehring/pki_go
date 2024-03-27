@@ -63,6 +63,8 @@ var IpServer string
 var PortServerSecure string
 var PortServerInsecure string
 
+var PrivateKey *rsa.PrivateKey
+
 // everything which is a global variable and can be changed
 // should be accesseed via env parameter and can be defined
 // in the manifest
@@ -139,6 +141,8 @@ func Initialize() {
 	CreateKeyPair(PathOwnKey)
 	challenges = make(map[string]ChallengeObject)
 	challengesRenew = make(map[string]ChallengeObjectRenew)
+
+	PrivateKey, _ = LoadPrivateKeyFromFile(PathOwnKey)
 
 	// get certificate from root pkis
 	// same as in client
@@ -728,8 +732,6 @@ func GetNewTokenGet(w http.ResponseWriter, r *http.Request) {
 
 	parsedToken, _ := jwt.Parse(tokenString, nil)
 
-	privateKey, err := LoadPrivateKeyFromFile(PathOwnKey)
-
 	claims, ok := parsedToken.Claims.(jwt.MapClaims)
 	if !ok {
 		fmt.Println("Invalid JWT claims")
@@ -773,16 +775,16 @@ func GetNewTokenGet(w http.ResponseWriter, r *http.Request) {
 		E: int(e2.Int64()),
 	}
 
-	token, err := jwt.Parse(oldIct, func(token *jwt.Token) (interface{}, error) {
+	token, _ := jwt.Parse(oldIct, func(token *jwt.Token) (interface{}, error) {
 		// Check the signing method
 		if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
 		return recreateOldPubKey, nil
 	})
-	if err != nil {
-		log.Fatal(err)
-	}
+	//if err != nil {
+	//	log.Fatal(err)
+	//}
 	if !token.Valid {
 		fmt.Println("token not valid")
 	}
@@ -830,7 +832,7 @@ func GetNewTokenGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	newJwt := CreateJwt(privateKey, frontendAppID, recreateNewPubKey, frontendAppID, RootUrl, RootPort)
+	newJwt := CreateJwt(PrivateKey, frontendAppID, recreateNewPubKey, frontendAppID, RootUrl, RootPort)
 
 	w.Header().Set("Content-Type", "application/json")
 	fmt.Fprint(w, newJwt)
