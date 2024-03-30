@@ -572,25 +572,29 @@ func DefineTLSConfig() *tls.Config {
 	}
 
 	certPool := x509.NewCertPool()
-	certPool.AppendCertsFromPEM(caCert)
 	certPool.AppendCertsFromPEM(marbleCert)
+	certPool.AppendCertsFromPEM(caCert)
 
 	tlsConfig = &tls.Config{
 		Certificates: []tls.Certificate{ownCert},
 		ClientAuth:   tls.RequireAndVerifyClientCert,
 		ClientCAs:    certPool,
 		VerifyPeerCertificate: func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
-			// Perform additional checks on the client certificate
-			for _, chain := range verifiedChains {
-				for _, cert := range chain {
-					// Check if the "iat" field is not older than 5 minutes ago
-					iat := cert.NotBefore
-					maxAge := 5 * time.Minute // change to 5 later
-					if time.Since(iat) > maxAge {
-						return fmt.Errorf("client certificate is too old (issued more than 5 minutes ago)")
-					}
-				}
+			// Check if there are any verified chains
+			if len(verifiedChains) == 0 {
+				return fmt.Errorf("no verified chains found")
 			}
+
+			// Extract the leaf certificate from the first chain
+			leafCert := verifiedChains[0][0]
+
+			// Check if the "NotBefore" field of the leaf certificate is not older than 5 minutes ago
+			iat := leafCert.NotBefore
+			maxAge := 5 * time.Minute // Change to 5 later
+			if time.Since(iat) > maxAge {
+				return fmt.Errorf("client certificate is too old (issued more than 5 minutes ago)")
+			}
+
 			return nil
 		},
 	}
