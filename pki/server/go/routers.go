@@ -31,6 +31,7 @@ func NewRouter() *mux.Router {
 	for _, route := range routes {
 		var handler http.Handler
 		handler = route.HandlerFunc
+
 		handler = Logger(handler, route.Name)
 
 		router.
@@ -87,22 +88,24 @@ var routes = Routes{
 	},
 
 	Route{
+		// as long as not everywhere changed
 		"GetTokenGet",
 		strings.ToUpper("Get"),
 		"/getCert",
 		GetTokenGet,
+	},
+
+	Route{
+		"GetNewChallengeGet",
+		strings.ToUpper("Get"),
+		"/getNewChallenge",
+		GetNewChallengeGet,
 	},
 	Route{
 		"GetNewTokenGet",
 		strings.ToUpper("Get"),
 		"/getNewCert",
 		GetNewTokenGet,
-	},
-	Route{
-		"GetNewChallengeGet",
-		strings.ToUpper("Get"),
-		"/getNewChallenge",
-		GetNewChallengeGet,
 	},
 }
 

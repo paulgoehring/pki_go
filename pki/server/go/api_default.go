@@ -669,6 +669,7 @@ func DefineTLSConfig() *tls.Config {
 		fmt.Println("Error loading marble root certificate:", err)
 		return nil
 	}
+	fmt.Print(marbleCert)
 
 	certPool := x509.NewCertPool()
 	certPool.AppendCertsFromPEM(marbleCert)
@@ -691,6 +692,7 @@ func DefineTLSConfig() *tls.Config {
 			maxAge := 5 * time.Minute // Change to 5 later
 			if time.Since(iat) > maxAge {
 				return fmt.Errorf("client certificate is too old (issued more than 5 minutes ago)")
+
 			}
 
 			return nil
