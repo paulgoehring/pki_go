@@ -669,7 +669,6 @@ func DefineTLSConfig() *tls.Config {
 		fmt.Println("Error loading marble root certificate:", err)
 		return nil
 	}
-	fmt.Print(marbleCert)
 
 	certPool := x509.NewCertPool()
 	certPool.AppendCertsFromPEM(marbleCert)
