@@ -1,7 +1,4 @@
-WORKDIR /root
-
-COPY go.mod go.sum ./
-RUN go mod download
+FROM golang:1.17 AS build
 
 RUN git clone https://github.com/paulgoehring/pki_go/ /pki_go
 WORKDIR /pki_go/pki/root_server
