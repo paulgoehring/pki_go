@@ -353,7 +353,6 @@ func RenewCertificate(serverIp string, serverPort string, pathJwt string, pathKe
 
 func GetNewChallenge(serverIp string, serverPort string, appID string) string {
 
-	// TODO Correct IP and port
 	u, err := url.Parse(fmt.Sprintf("http://%s:%s/getNewChallenge", serverIp, serverPort))
 	if err != nil {
 		fmt.Println("Could not parse URL", err)
@@ -385,10 +384,8 @@ func GetNewChallenge(serverIp string, serverPort string, appID string) string {
 }
 
 func VerifyICT(pathRootIp string, rootPort string, tokenString string) bool {
-	//token, _ := jwt.Parse(tokenString, nil)
 
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-		//resp, err := http.Get(pathRootIp + ":" + rootPort + "/.well-known/certs")
 		resp, err := http.Get(fmt.Sprintf("http://%v:%v/.well-known/certs", pathRootIp, rootPort))
 		if err != nil {
 			return nil, err
@@ -419,19 +416,11 @@ func VerifyICT(pathRootIp string, rootPort string, tokenString string) bool {
 				publicKeyKid = key
 				keyFound = true
 				break
-				//rsaPublicKey, err := jwt.ParseRSAPublicKeyFromPEM([]byte(key.N))
-				//if err != nil {
-				//	return nil, err
-				//}
-				//return rsaPublicKey, nil
 			}
 		}
 		if !keyFound {
 			return nil, errors.New("unable to find appropriate key")
 		}
-		//if publicKeyKid == (PublicKeyInfo{}) {
-		//	return nil, errors.New("unable to find appropriate key")
-		//}
 
 		n := new(big.Int)
 		n.SetString(publicKeyKid.N, 10)
