@@ -35,7 +35,7 @@ RUN rm -rf /var/lib/apt/lists/*
 
 
 COPY --from=build /pki_go/pki/root_server/root_server .
-COPY --from=build manifest.json .
+COPY manifest.json .
 COPY --from=build /pki_go/pki/root_server/start.sh .
 RUN chmod +x start.sh
 

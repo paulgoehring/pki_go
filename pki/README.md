@@ -21,7 +21,7 @@ wget -qO - https://packages.microsoft.com/keys/microsoft.asc | sudo apt-key add 
 sudo apt-get update
 sudo apt-get install -y az-dcap-client
 
-# kubectl?
+# kubectl
 curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
 curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl.sha256"
 echo "$(cat kubectl.sha256)  kubectl" | sha256sum --check
@@ -29,7 +29,7 @@ sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
 kubectl version --client
 
 
-# docker?
+# docker
 for pkg in docker.io docker-doc docker-compose docker-compose-v2 podman-docker containerd runc; do sudo apt-get remove $pkg; done
 sudo apt-get update
 sudo apt-get install ca-certificates curl
@@ -52,7 +52,7 @@ sudo usermod -aG docker ${USER}
 su -s ${USER}
 docker run hello-world
 
-Intel SGX, evtl edgelessrt? -> nicht benötigt
+
 ## etc/sgx_default_qcnl.conf -> hier PCCS Server Endpuntk definieren
 
 
@@ -88,7 +88,7 @@ kubectl -n marblerun port-forward svc/coordinator-mesh-api 2001:2001 --address l
 
 marblerun manifest set manifest.json $MARBLERUN 
 
-marblerun manifest verify ../client/manifest.json $MARBLERUN --coordinator-cert marblerunCA.crt
+marblerun manifest verify manifest.json $MARBLERUN --coordinator-cert marblerunCA.crt
 
 
 # Starte Anwendungen
@@ -102,7 +102,6 @@ docker build -t serverpki .
 
 docker run -it --network host --device /dev/sgx_enclave --device /dev/sgx_provision -v /dev/sgx:/dev/sgx -v /etc/sgx_default_qcnl.conf:/etc/sgx_default_qcnl.conf  serverpki
 
-server uid: f2d1add30ae96e42ff974c0958d4f339da9edb1bd1b22062be6f7634114bfa4f
 
 docker build -t clientpki .
 
