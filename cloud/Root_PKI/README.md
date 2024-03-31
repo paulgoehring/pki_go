@@ -4,7 +4,7 @@ sudo ./installDependencies.sh
 
 Neu einloggen um Docker ohne sudo Verwenden zu können -> test mit docker run hello-world
 
-Wenn PKI-Server und Client nicht im Kubernetes Cluster integriert werden, muss in der Datei \etc\sgx_c
+Wenn PKI-Server und Client nicht im Kubernetes Cluster integriert werden, muss in der Datei /etc/sgx_default_qcnl.conf angepasst werden
 
 ## Definiere Manifest, UniqueID für PKI-Server und PKI-Client wenn Docker Container neu gebaut wird
 
