@@ -97,8 +97,12 @@ docker build -t rootpki .
 docker run -it --network host rootpki
 
 docker build -t serverpki .
+# set pccs url in /etc/sgx_default_qcnl.conf
+# "pccs_url": "https://global.acccache.azure.net/sgx/certification/v4/"
 
 docker run -it --network host --device /dev/sgx_enclave --device /dev/sgx_provision -v /dev/sgx:/dev/sgx -v /etc/sgx_default_qcnl.conf:/etc/sgx_default_qcnl.conf  serverpki
+
+server uid: f2d1add30ae96e42ff974c0958d4f339da9edb1bd1b22062be6f7634114bfa4f
 
 docker build -t clientpki .
 

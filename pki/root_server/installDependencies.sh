@@ -63,3 +63,5 @@ sudo groupadd docker
 sudo usermod -aG docker ${USER}
 
 # neu einloggen um docker verwenden zu können
+
+# ändere /etc/sgx_ blabla
