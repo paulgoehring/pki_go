@@ -64,8 +64,12 @@ func init() {
 	myutils.CreateKeyPair(PathOwnKey)
 	client.GetCertificate(PathOwnKey, PathIdentityToken, PathMarbleKey, PathMarbleCrt,
 		AppName, ServerIp, ServerPortSecure)
+
+	displayToken(PathIdentityToken)
 	client.RenewCertificate(ServerIp, ServerPortInsecure, PathIdentityToken,
 		PathOwnKey, AppName, false)
+
+	displayToken(PathIdentityToken)
 
 	token, err := os.ReadFile(PathIdentityToken)
 	if err != nil {
@@ -78,4 +82,16 @@ func init() {
 		PathOwnKey, AppName, false)
 
 	// implement Client Logic Here
+}
+
+func displayToken(pathToken string) {
+	tokenBytes, err := os.ReadFile(PathIdentityToken)
+	if err != nil {
+		fmt.Println("Error reading JWT file:", err)
+		return
+	}
+	token := string(tokenBytes)
+	fmt.Println("JWT Token:")
+	fmt.Println("----------")
+	fmt.Printf("%s\n", token)
 }
