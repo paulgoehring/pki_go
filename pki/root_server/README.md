@@ -1,9 +1,4 @@
-# BUILD
+# Run
 
-ego-go build main.go
+go run main.go
 
-ego sign rpki
-
-# RUN
-
-ego run rpki
