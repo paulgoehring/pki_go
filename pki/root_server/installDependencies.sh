@@ -11,6 +11,14 @@ wget https://github.com/edgelesssys/marblerun/releases/latest/download/marblerun
 
 sudo install marblerun-ubuntu-20.04 /usr/local/bin/marblerun
 
+# install qpl
+
+sudo mkdir -p /etc/apt/keyrings
+wget -qO- https://download.01.org/intel-sgx/sgx_repo/ubuntu/intel-sgx-deb.key | sudo tee /etc/apt/keyrings/intel-sgx-keyring.asc > /dev/null
+echo "deb [signed-by=/etc/apt/keyrings/intel-sgx-keyring.asc arch=amd64] https://download.01.org/intel-sgx/sgx_repo/ubuntu focal main" | sudo tee /etc/apt/sources.list.d/intel-sgx.list
+sudo apt update
+sudo apt install libsgx-dcap-default-qpl
+
 #install azure dcap client
 
 echo "deb [arch=amd64] https://packages.microsoft.com/ubuntu/20.04/prod focal main" | sudo tee /etc/apt/sources.list.d/msprod.list

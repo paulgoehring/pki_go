@@ -1,10 +1,10 @@
-FROM golang:1.17 AS build
 WORKDIR /root
 
 COPY go.mod go.sum ./
 RUN go mod download
 
-COPY . .
+RUN git clone https://github.com/paulgoehring/pki_go/ /pki_go
+WORKDIR /pki_go/pki/root_server
 
 RUN go build -o root_server
 
@@ -37,7 +37,10 @@ RUN apt-get update && \
 RUN rm -rf /var/lib/apt/lists/*
 
 
-COPY --from=build /root/root_server .
-COPY --from=build /root/manifest.json .
+COPY --from=build /pki_go/pki/root_server/root_server .
+COPY --from=build /pki_go/pki/root_server/manifest.json .
+COPY --from=build /pki_go/pki/root_server/start.sh .
+RUN chmod +x start.sh
 
-CMD /bin/sh -c "marblerun manifest verify manifest.json localhost:4433 --coordinator-cert marblerunCA.crt && ./root_server"
+#CMD /bin/sh -c "marblerun manifest verify manifest.json localhost:4433 --coordinator-cert marblerunCA.crt && ./root_server"
+CMD ["/root/start.sh"]
