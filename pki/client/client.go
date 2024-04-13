@@ -67,7 +67,7 @@ func init() {
 
 	displayToken(PathIdentityToken)
 	client.RenewCertificate(ServerIp, ServerPortInsecure, PathIdentityToken,
-		PathOwnKey, AppName, false)
+		PathOwnKey, AppName, true)
 
 	displayToken(PathIdentityToken)
 

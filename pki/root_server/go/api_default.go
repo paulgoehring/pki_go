@@ -220,8 +220,8 @@ func Generatex509Template(serialNumber *big.Int, subjectName string, validHours 
 func WellKnownConfigurationGet(w http.ResponseWriter, r *http.Request) {
 	configuration := OpenIDConfiguration{
 		Issuer:        "Root PKI Server",
-		JWKSURI:       "http//localhost:8443/.well-known/certs", // Replace with your JWKS URI
-		TokenEndpoint: "httpw//localhost:8443/.getNewCert",
+		JWKSURI:       "http://52.234.229.246:8091/.well-known/certs", // Replace with your JWKS URI
+		TokenEndpoint: "http://52.234.229.246:8091/.getNewCert",       // change after presentation to default localhost
 	}
 	w.Header().Set("Content-Type", "application/json")
 	encodedConfig, err := json.MarshalIndent(configuration, "", "  ")
