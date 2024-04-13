@@ -1,10 +1,12 @@
 {
     "Packages": {
         "server": {
-            "Debug": true
+            "Debug": true,
+            "UniqueID": "4b0b763a6e1207e0431717c7b5e4525f4de825371308567b0e52bfcfa85135c1"
         },
         "client": {
-            "Debug": true
+            "Debug": true,
+            "UniqueID": "711b979ef9d4a8715e24646ff8fed0407c23e5dd4d793462f0cfc2e1c5c10dfd"
         }
     },
     "Marbles": {
